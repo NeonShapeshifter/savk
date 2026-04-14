@@ -64,7 +64,7 @@ func TestSystemdIntegration(t *testing.T) {
 
 	dir := t.TempDir()
 	contractPath := filepath.Join(dir, "contract.yaml")
-	contractBody := strings.Join([]string{
+	lines := []string{
 		"apiVersion: savk/v1",
 		"kind: ApplianceContract",
 		"metadata:",
@@ -77,19 +77,22 @@ func TestSystemdIntegration(t *testing.T) {
 		"      user: " + expectedUser,
 		"      group: " + expectedGroup,
 		"    restart: " + properties["Restart"],
-		"    capabilities: " + integrationInlineList(serviceCaps),
+	}
+	lines = append(lines, integrationYAMLKeyList("    ", "capabilities", serviceCaps)...)
+	lines = append(lines,
 		"identity:",
 		"  runtime_subject:",
-		"    service: " + service,
-		"    uid: " + strconv.Itoa(processStatus.uid),
-		"    gid: " + strconv.Itoa(processStatus.gid),
+		"    service: "+service,
+		"    uid: "+strconv.Itoa(processStatus.uid),
+		"    gid: "+strconv.Itoa(processStatus.gid),
 		"    capabilities:",
-		"      effective: " + integrationInlineList(processStatus.effective),
-		"      permitted: " + integrationInlineList(processStatus.permitted),
-		"      inheritable: " + integrationInlineList(processStatus.inheritable),
-		"      bounding: " + integrationInlineList(processStatus.bounding),
-		"      ambient: " + integrationInlineList(processStatus.ambient),
-	}, "\n") + "\n"
+	)
+	lines = append(lines, integrationYAMLKeyList("      ", "effective", processStatus.effective)...)
+	lines = append(lines, integrationYAMLKeyList("      ", "permitted", processStatus.permitted)...)
+	lines = append(lines, integrationYAMLKeyList("      ", "inheritable", processStatus.inheritable)...)
+	lines = append(lines, integrationYAMLKeyList("      ", "bounding", processStatus.bounding)...)
+	lines = append(lines, integrationYAMLKeyList("      ", "ambient", processStatus.ambient)...)
+	contractBody := strings.Join(lines, "\n") + "\n"
 
 	if err := os.WriteFile(contractPath, []byte(contractBody), 0o644); err != nil {
 		t.Fatalf("os.WriteFile(contract) error = %v", err)
@@ -290,16 +293,22 @@ func integrationExpectedServiceGroup(rawUser, rawGroup string) (string, error) {
 	return resolver.PrimaryGroupNameByUser(userName)
 }
 
-func integrationInlineList(values []string) string {
+func integrationYAMLList(indent string, values []string) []string {
+	lines := make([]string, 0, len(values))
+	for _, value := range values {
+		lines = append(lines, indent+"- "+strconv.Quote(value))
+	}
+	return lines
+}
+
+func integrationYAMLKeyList(indent, key string, values []string) []string {
 	if len(values) == 0 {
-		return "[]"
+		return []string{indent + key + ": []"}
 	}
 
-	quoted := make([]string, 0, len(values))
-	for _, value := range values {
-		quoted = append(quoted, strconv.Quote(value))
-	}
-	return "[" + strings.Join(quoted, ", ") + "]"
+	lines := []string{indent + key + ":"}
+	lines = append(lines, integrationYAMLList(indent+"  ", values)...)
+	return lines
 }
 
 func accountResolverForIntegration() interface {
