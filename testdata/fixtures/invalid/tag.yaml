@@ -1,0 +1,9 @@
+apiVersion: savk/v1
+kind: ApplianceContract
+metadata:
+  name: !!str tagged
+  target: linux-systemd
+
+paths:
+  /etc/sensor-agent/config.yaml:
+    type: file

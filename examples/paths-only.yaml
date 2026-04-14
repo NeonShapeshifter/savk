@@ -1,0 +1,16 @@
+apiVersion: savk/v1
+kind: ApplianceContract
+metadata:
+  name: paths-only
+  target: linux-systemd
+
+paths:
+  /etc/sensor-agent/config.yaml:
+    owner: root
+    group: sensor
+    mode: "0640"
+    type: file
+  /var/log/sensor-agent:
+    owner: sensor
+    mode: "0750"
+    type: directory

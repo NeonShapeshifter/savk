@@ -1,0 +1,1 @@
+at least one capability set must be defined at identity.sensor_runtime.capabilities

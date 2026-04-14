@@ -1,0 +1,9 @@
+apiVersion: savk/v1
+kind: ApplianceContract
+metadata:
+  name: invalid-identity
+  target: linux-systemd
+
+identity:
+  sensor_runtime:
+    uid: 1001

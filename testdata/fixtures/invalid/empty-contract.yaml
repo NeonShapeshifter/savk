@@ -1,0 +1,5 @@
+apiVersion: savk/v1
+kind: ApplianceContract
+metadata:
+  name: empty-contract
+  target: linux-systemd

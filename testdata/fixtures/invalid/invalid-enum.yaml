@@ -1,0 +1,10 @@
+apiVersion: savk/v1
+kind: ApplianceContract
+metadata:
+  name: invalid-enum
+  target: linux-systemd
+
+services:
+  sensor-agent.service:
+    state: active
+    restart: on_failure

@@ -1,0 +1,44 @@
+apiVersion: savk/v1
+kind: ApplianceContract
+metadata:
+  name: full-sensor-agent
+  target: linux-systemd
+
+services:
+  sensor-agent.service:
+    state: active
+    run_as:
+      user: sensor
+      group: sensor
+    restart: on-failure
+    capabilities:
+      - CAP_NET_BIND_SERVICE
+
+sockets:
+  /run/sensor-agent.sock:
+    owner: sensor
+    group: sensor
+    mode: "0660"
+
+paths:
+  /etc/sensor-agent/config.yaml:
+    owner: root
+    group: sensor
+    mode: "0640"
+    type: file
+  /var/log/sensor-agent:
+    owner: sensor
+    mode: "0750"
+    type: directory
+
+identity:
+  sensor_runtime:
+    service: sensor-agent.service
+    uid: 1001
+    gid: 1001
+    capabilities:
+      effective:
+        - CAP_NET_BIND_SERVICE
+      permitted:
+        - CAP_NET_BIND_SERVICE
+      ambient: []

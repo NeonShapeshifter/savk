@@ -1,0 +1,1 @@
+duplicate key "/etc/savk/config.yaml" at line 10

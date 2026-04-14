@@ -1,0 +1,11 @@
+apiVersion: savk/v1
+kind: ApplianceContract
+metadata:
+  name: alias
+  target: linux-systemd
+
+services:
+  sensor-agent.service:
+    state: active
+    capabilities:
+      - *capref

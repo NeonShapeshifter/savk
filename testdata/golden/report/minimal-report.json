@@ -1,0 +1,76 @@
+{
+  "schemaVersion": "savk-report/v1",
+  "toolVersion": "0.1.0",
+  "contractVersion": "savk/v1",
+  "contractHash": "sha256:4c54e5b4",
+  "runID": "20260412T160000Z-8f2d",
+  "target": "linux-systemd",
+  "host": "sensor-prod-01",
+  "startedAt": "2026-04-12T16:00:00Z",
+  "durationMs": 14,
+  "exitCode": 2,
+  "summary": {
+    "pass": 1,
+    "fail": 1,
+    "notApplicable": 0,
+    "insufficientData": 0,
+    "error": 1
+  },
+  "results": [
+    {
+      "checkID": "path./etc/sensor-agent/config.yaml.exists",
+      "domain": "paths",
+      "status": "PASS",
+      "expected": true,
+      "observed": true,
+      "evidence": {
+        "source": "fs.stat",
+        "collector": "paths",
+        "collectedAt": "2026-04-12T16:00:00Z",
+        "redacted": false,
+        "truncated": false
+      },
+      "durationMs": 1,
+      "message": "path exists"
+    },
+    {
+      "checkID": "path./etc/sensor-agent/config.yaml.mode",
+      "domain": "paths",
+      "status": "FAIL",
+      "expected": "0640",
+      "observed": "0666",
+      "evidence": {
+        "source": "fs.stat",
+        "collector": "paths",
+        "collectedAt": "2026-04-12T16:00:00Z",
+        "raw": "mode=0666",
+        "redacted": false,
+        "truncated": false
+      },
+      "durationMs": 1,
+      "message": "expected mode 0640, observed 0666"
+    },
+    {
+      "checkID": "path./var/log/sensor-agent.exists",
+      "domain": "paths",
+      "status": "ERROR",
+      "reasonCode": "TIMEOUT",
+      "expected": true,
+      "evidence": {
+        "source": "fs.stat",
+        "collector": "paths",
+        "collectedAt": "2026-04-12T16:00:02Z",
+        "command": [
+          "/usr/bin/stat",
+          "/var/log/sensor-agent"
+        ],
+        "exitCode": 124,
+        "raw": "stat timed out while collecting evidence",
+        "redacted": false,
+        "truncated": true
+      },
+      "durationMs": 2000,
+      "message": "collector timed out while reading /var/log/sensor-agent"
+    }
+  ]
+}

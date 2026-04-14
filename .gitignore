@@ -1,0 +1,12 @@
+.codex
+bin/
+dist/
+
+# Go test and build artifacts
+*.test
+*.out
+coverage.out
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db

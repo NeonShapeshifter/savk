@@ -1,0 +1,9 @@
+apiVersion: savk/v1
+kind: ApplianceContract
+metadata:
+	name: tabs
+  target: linux-systemd
+
+paths:
+  /etc/savk/config.yaml:
+    mode: "0640"

@@ -1,0 +1,9 @@
+apiVersion: savk/v1
+kind: ApplianceContract
+metadata:
+  name: unknown-field
+  target: linux-systemd
+
+paths:
+  /etc/savk/config.yaml:
+    onwer: root

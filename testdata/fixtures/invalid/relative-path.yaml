@@ -1,0 +1,9 @@
+apiVersion: savk/v1
+kind: ApplianceContract
+metadata:
+  name: relative-path
+  target: linux-systemd
+
+paths:
+  var/log/savk:
+    type: directory

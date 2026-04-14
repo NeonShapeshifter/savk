@@ -1,0 +1,11 @@
+apiVersion: savk/v1
+kind: ApplianceContract
+metadata:
+  name: sockets-only
+  target: linux-systemd
+
+sockets:
+  /run/sensor-agent.sock:
+    owner: sensor
+    group: sensor
+    mode: "0660"

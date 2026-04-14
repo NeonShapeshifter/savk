@@ -1,0 +1,12 @@
+apiVersion: savk/v1
+kind: ApplianceContract
+metadata:
+  name: minimal-paths
+  target: linux-systemd
+
+paths:
+  /etc/savk/config.yaml:
+    owner: root
+    group: savk
+    mode: "0640"
+    type: file

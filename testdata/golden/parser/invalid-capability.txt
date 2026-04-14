@@ -1,0 +1,2 @@
+invalid capability "net_admin" at identity.sensor_runtime.capabilities.effective.0
+  hint: use canonical capability name "CAP_NET_ADMIN"

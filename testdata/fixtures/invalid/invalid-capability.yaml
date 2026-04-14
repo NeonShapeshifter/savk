@@ -1,0 +1,12 @@
+apiVersion: savk/v1
+kind: ApplianceContract
+metadata:
+  name: invalid-capability
+  target: linux-systemd
+
+identity:
+  sensor_runtime:
+    service: sensor-agent.service
+    capabilities:
+      effective:
+        - net_admin

@@ -1,0 +1,1 @@
+empty contract: at least one of services, sockets, paths, identity must be non-empty

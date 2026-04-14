@@ -1,0 +1,2 @@
+invalid restart policy "on_failure" at services.sensor-agent.service
+  valid values: always, on-failure, no
