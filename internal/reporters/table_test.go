@@ -19,6 +19,7 @@ func TestRenderTableReportIncludesSummaryAndStableOrder(t *testing.T) {
 		RunID:           "run-01",
 		Target:          contract.TargetLinuxSystemd,
 		Host:            "sensor-01",
+		HostRoot:        "/host",
 		StartedAt:       time.Date(2026, 4, 12, 11, 0, 0, 0, time.FixedZone("EST", -5*60*60)),
 		DurationMs:      25,
 		Results: []evidence.CheckResult{
@@ -50,6 +51,9 @@ func TestRenderTableReportIncludesSummaryAndStableOrder(t *testing.T) {
 	}
 	if !strings.Contains(got, "Started: 2026-04-12T16:00:00Z\n") {
 		t.Fatalf("table output missing UTC timestamp: %q", got)
+	}
+	if !strings.Contains(got, "HostRoot: /host\n") {
+		t.Fatalf("table output missing host-root context: %q", got)
 	}
 
 	indexA := strings.Index(got, "path./a.exists")

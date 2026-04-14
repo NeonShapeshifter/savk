@@ -126,6 +126,41 @@ func TestRenderJSONReportKeepsZeroExitCodeWhenCommandExists(t *testing.T) {
 	}
 }
 
+func TestRenderJSONReportIncludesHostRootWhenProvided(t *testing.T) {
+	t.Parallel()
+
+	report, err := RenderJSONReport(JSONReportInput{
+		ToolVersion:     "0.1.0",
+		ContractVersion: contract.APIVersionV1,
+		ContractHash:    "sha256:abcd",
+		RunID:           "run-rooted",
+		Target:          contract.TargetLinuxSystemd,
+		Host:            "observer-01",
+		HostRoot:        "/host",
+		StartedAt:       time.Date(2026, 4, 13, 12, 0, 0, 0, time.UTC),
+		DurationMs:      1,
+		Results: []evidence.CheckResult{
+			{
+				CheckID: "path./etc/hosts.exists",
+				Domain:  "paths",
+				Status:  evidence.StatusPass,
+				Evidence: evidence.Evidence{
+					Source:      "fs.lstat",
+					Collector:   "paths",
+					CollectedAt: time.Date(2026, 4, 13, 12, 0, 0, 0, time.UTC),
+				},
+				Message: "ok",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("RenderJSONReport() error = %v", err)
+	}
+	if !strings.Contains(string(report), `"hostRoot": "/host"`) {
+		t.Fatalf("report missing hostRoot context:\n%s", string(report))
+	}
+}
+
 func TestRenderJSONReportRedactsAndTruncatesRawByDefault(t *testing.T) {
 	t.Parallel()
 

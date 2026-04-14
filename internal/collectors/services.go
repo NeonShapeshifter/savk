@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -61,16 +60,19 @@ func (OSCommandRunner) Run(ctx context.Context, argv []string) (CommandResult, e
 }
 
 func BuildServiceChecks(services map[string]contract.ServiceSpec, runner CommandRunner) []engine.Check {
-	return buildServiceChecks(services, runner, false)
+	return buildServiceChecksWithResolver(services, runner, nil, false)
 }
 
 func BuildServiceStateChecks(services map[string]contract.ServiceSpec, runner CommandRunner) []engine.Check {
-	return buildServiceChecks(services, runner, true)
+	return buildServiceChecksWithResolver(services, runner, nil, true)
 }
 
-func buildServiceChecks(services map[string]contract.ServiceSpec, runner CommandRunner, stateOnly bool) []engine.Check {
+func buildServiceChecksWithResolver(services map[string]contract.ServiceSpec, runner CommandRunner, resolver AccountResolver, stateOnly bool) []engine.Check {
 	if runner == nil {
 		runner = OSCommandRunner{}
+	}
+	if resolver == nil {
+		resolver = NewAccountResolver("")
 	}
 	systemctlPath, commandErr := resolveSystemctlPathForRunner(runner)
 
@@ -91,49 +93,54 @@ func buildServiceChecks(services map[string]contract.ServiceSpec, runner Command
 	for _, name := range keys {
 		spec := services[name]
 		checks = append(checks, serviceCheck{
-			id:     fmt.Sprintf("service.%s.state", name),
-			name:   name,
-			spec:   spec,
-			kind:   "state",
-			reader: reader,
+			id:       fmt.Sprintf("service.%s.state", name),
+			name:     name,
+			spec:     spec,
+			kind:     "state",
+			reader:   reader,
+			resolver: resolver,
 		})
 		if stateOnly {
 			continue
 		}
 		if spec.Restart != nil {
 			checks = append(checks, serviceCheck{
-				id:     fmt.Sprintf("service.%s.restart", name),
-				name:   name,
-				spec:   spec,
-				kind:   "restart",
-				reader: reader,
+				id:       fmt.Sprintf("service.%s.restart", name),
+				name:     name,
+				spec:     spec,
+				kind:     "restart",
+				reader:   reader,
+				resolver: resolver,
 			})
 		}
 		if spec.RunAs != nil {
 			checks = append(checks, serviceCheck{
-				id:     fmt.Sprintf("service.%s.run_as.user", name),
-				name:   name,
-				spec:   spec,
-				kind:   "run_as.user",
-				reader: reader,
+				id:       fmt.Sprintf("service.%s.run_as.user", name),
+				name:     name,
+				spec:     spec,
+				kind:     "run_as.user",
+				reader:   reader,
+				resolver: resolver,
 			})
 			if spec.RunAs.Group != "" {
 				checks = append(checks, serviceCheck{
-					id:     fmt.Sprintf("service.%s.run_as.group", name),
-					name:   name,
-					spec:   spec,
-					kind:   "run_as.group",
-					reader: reader,
+					id:       fmt.Sprintf("service.%s.run_as.group", name),
+					name:     name,
+					spec:     spec,
+					kind:     "run_as.group",
+					reader:   reader,
+					resolver: resolver,
 				})
 			}
 		}
 		if spec.Capabilities != nil {
 			checks = append(checks, serviceCheck{
-				id:     fmt.Sprintf("service.%s.capabilities", name),
-				name:   name,
-				spec:   spec,
-				kind:   "capabilities",
-				reader: reader,
+				id:       fmt.Sprintf("service.%s.capabilities", name),
+				name:     name,
+				spec:     spec,
+				kind:     "capabilities",
+				reader:   reader,
+				resolver: resolver,
 			})
 		}
 	}
@@ -142,11 +149,12 @@ func buildServiceChecks(services map[string]contract.ServiceSpec, runner Command
 }
 
 type serviceCheck struct {
-	id     string
-	name   string
-	spec   contract.ServiceSpec
-	kind   string
-	reader *serviceUnitReader
+	id       string
+	name     string
+	spec     contract.ServiceSpec
+	kind     string
+	reader   *serviceUnitReader
+	resolver AccountResolver
 }
 
 func (c serviceCheck) ID() string {
@@ -247,9 +255,9 @@ func (c serviceCheck) runRestart(unit serviceUnitResult) evidence.CheckResult {
 
 func (c serviceCheck) runUser(unit serviceUnitResult) evidence.CheckResult {
 	expected := c.spec.RunAs.User
-	observed, err := observedServiceUser(unit)
+	observed, err := observedServiceUser(unit, c.resolver)
 	if err != nil {
-		return serviceError(evidence.ReasonParseError, fmt.Sprintf("unable to resolve effective service user for %s", c.name), c.reader.command(c.name), unit.exitCodePtr(), unit.raw)
+		return serviceInsufficientData(fmt.Sprintf("unable to resolve effective service user for %s", c.name), c.reader.command(c.name), unit.exitCodePtr(), unit.raw)
 	}
 	status := evidence.StatusPass
 	message := fmt.Sprintf("service user matches %s", expected)
@@ -263,9 +271,9 @@ func (c serviceCheck) runUser(unit serviceUnitResult) evidence.CheckResult {
 
 func (c serviceCheck) runGroup(unit serviceUnitResult) evidence.CheckResult {
 	expected := c.spec.RunAs.Group
-	observed, err := observedServiceGroup(unit)
+	observed, err := observedServiceGroup(unit, c.resolver)
 	if err != nil {
-		return serviceError(evidence.ReasonParseError, fmt.Sprintf("unable to resolve effective service group for %s", c.name), c.reader.command(c.name), unit.exitCodePtr(), unit.raw)
+		return serviceInsufficientData(fmt.Sprintf("unable to resolve effective service group for %s", c.name), c.reader.command(c.name), unit.exitCodePtr(), unit.raw)
 	}
 	status := evidence.StatusPass
 	message := fmt.Sprintf("service group matches %s", expected)
@@ -419,59 +427,27 @@ func parseSystemctlShow(stdout string) (map[string]string, error) {
 	return properties, nil
 }
 
-func observedServiceUser(unit serviceUnitResult) (string, error) {
+func observedServiceUser(unit serviceUnitResult, resolver AccountResolver) (string, error) {
 	value := strings.TrimSpace(unit.properties["User"])
 	if value == "" {
 		return "root", nil
 	}
 
-	return normalizeUserName(value)
+	return resolver.NormalizeUserValue(value)
 }
 
-func observedServiceGroup(unit serviceUnitResult) (string, error) {
+func observedServiceGroup(unit serviceUnitResult, resolver AccountResolver) (string, error) {
 	value := strings.TrimSpace(unit.properties["Group"])
 	if value != "" {
-		return normalizeGroupName(value)
+		return resolver.NormalizeGroupValue(value)
 	}
 
-	userName, err := observedServiceUser(unit)
-	if err != nil {
-		return "", err
-	}
-	account, err := user.Lookup(userName)
-	if err != nil {
-		return "", err
-	}
-	group, err := user.LookupGroupId(account.Gid)
+	userName, err := observedServiceUser(unit, resolver)
 	if err != nil {
 		return "", err
 	}
 
-	return group.Name, nil
-}
-
-func normalizeUserName(value string) (string, error) {
-	if !isNumericIdentifier(value) {
-		return value, nil
-	}
-
-	account, err := user.LookupId(value)
-	if err != nil {
-		return "", err
-	}
-	return account.Username, nil
-}
-
-func normalizeGroupName(value string) (string, error) {
-	if !isNumericIdentifier(value) {
-		return value, nil
-	}
-
-	group, err := user.LookupGroupId(value)
-	if err != nil {
-		return "", err
-	}
-	return group.Name, nil
+	return resolver.PrimaryGroupNameByUser(userName)
 }
 
 func isNumericIdentifier(value string) bool {
@@ -527,6 +503,22 @@ func serviceError(reason evidence.ReasonCode, message string, command []string, 
 		ReasonCode: reason,
 		Evidence: evidence.Evidence{
 			Source:      "systemctl show",
+			Collector:   "services",
+			CollectedAt: time.Now().UTC(),
+			Command:     command,
+			ExitCode:    exitCode,
+			Raw:         raw,
+		},
+		Message: message,
+	}
+}
+
+func serviceInsufficientData(message string, command []string, exitCode *int, raw string) evidence.CheckResult {
+	return evidence.CheckResult{
+		Status:     evidence.StatusInsufficientData,
+		ReasonCode: evidence.ReasonParseError,
+		Evidence: evidence.Evidence{
+			Source:      "systemctl show+accountdb",
 			Collector:   "services",
 			CollectedAt: time.Now().UTC(),
 			Command:     command,

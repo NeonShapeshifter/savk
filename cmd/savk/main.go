@@ -171,6 +171,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		RunID:           startedAt.Format("20060102T150405Z") + fmt.Sprintf("-%d", os.Getpid()),
 		Target:          cfg.Metadata.Target,
 		Host:            host,
+		HostRoot:        *hostRoot,
 		StartedAt:       startedAt,
 		DurationMs:      time.Since(startedAt).Milliseconds(),
 		IncludeRaw:      *includeRaw,

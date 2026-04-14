@@ -87,8 +87,8 @@ paths:
 
 - `paths`: slice principal hoy. End-to-end, real filesystem checks, honesto para existencia, tipo, modo, owner y group.
 - `sockets`: filesystem-backed, implementado con `lstat` y tests reales de Unix socket cuando el entorno lo permite.
-- `services`: implementado para `linux-systemd`, cubierto por unit tests; la integración real en repo hoy valida `services.state`, no toda la superficie del dominio.
-- `identity`: runtime process identity via `service -> (MainPID + ControlGroup) -> /proc/<pid>/{status,cgroup}`, con unit tests; la integración real en repo hoy valida `identity.uid`, no todos los checks del dominio.
+- `services`: implementado para `linux-systemd`, cubierto por unit tests y una ruta de integración real que valida toda la superficie pública service-backed.
+- `identity`: runtime process identity via `service -> (MainPID + ControlGroup) -> /proc/<pid>/{status,cgroup}`, con unit tests y cobertura de integración real para `uid`, `gid` y capability sets.
 
 Superficie actual por dominio:
 
@@ -106,10 +106,18 @@ Superficie actual por dominio:
 - si PID 1 no es `systemd`, el preflight reporta `NAMESPACE_ISOLATION` y los
   checks dependientes quedan bloqueados con `PREREQUISITE_FAILED`
 - `--host-root` remapea solo `paths` y `sockets` a un root explícito del host
+- `host` en el reporte identifica al observador; si se usa `--host-root`, el
+  reporte añade `hostRoot` para dejar explícito el root observado
 - en `v0.1`, `services.capabilities` compara `AmbientCapabilities`
 - `evidence.raw` se redacta y trunca por defecto en el reporte
 - `--include-raw` expone el raw completo del collector bajo opt-in explícito
 - shell-out a `systemctl` fuerza `LANG=C` y `LC_ALL=C` y usa una ruta absoluta allowlisted tras resolución
+- los checks por nombre de `owner`/`group` en `paths` y `sockets` resuelven
+  contra `/etc/passwd` y `/etc/group` del sistema observado; si no hay mapping
+  confiable, degradan a `INSUFFICIENT_DATA`
+- los checks `services.run_as.user` y `services.run_as.group` solo resuelven
+  IDs numéricos y grupos primarios vía `/etc/passwd` y `/etc/group` locales; si
+  esa evidencia no alcanza, degradan a `INSUFFICIENT_DATA`
 - `json` es el contrato público estable; `table` es salida humana
 - exit codes:
 
@@ -125,11 +133,12 @@ Superficie actual por dominio:
 - solo soporta `linux-systemd`
 - el parser soporta un subset explícito de YAML, no YAML completo
 - `--host-root` hoy solo aplica a `paths` y `sockets`
-- en el binario oficial (`CGO_ENABLED=0`), `paths` y `sockets` resuelven owner/group por nombre usando el comportamiento pure-Go de `os/user`, es decir, resolución local de cuentas del sistema observador
+- la resolución por nombre depende de `/etc/passwd` y `/etc/group` visibles para
+  SAVK; cuentas solo-NSS fuera de esos archivos pueden degradar a
+  `INSUFFICIENT_DATA`
 - para `services` e `identity`, algunas clasificaciones de fallo todavía dependen
   de `systemctl` y no de una API nativa de systemd
-- la integración real incluida en el repo hoy cubre namespace preflight,
-  `services.state` e `identity.uid`; el resto de la superficie service-backed
-  sigue respaldado principalmente por unit tests
+- la integración real incluida en el repo requiere opt-in explícito y un host
+  `linux-systemd` real; fuera de eso, la confianza sigue viniendo de unit tests
 - no hay remediación, remote execution, snapshots ni SARIF
 - el empaquetado recomendado es binario o tarball; `npm` y `pnpm` no forman parte del release

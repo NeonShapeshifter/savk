@@ -154,6 +154,10 @@ Reglas:
 - en `v0.1`, `services.<name>.capabilities` compara contra la propiedad
   `AmbientCapabilities` observada vía `systemctl show`
 - `run_as.user` y `run_as.group`, si existen, se comparan por nombre
+- si `systemctl` expone IDs numéricos o deja `Group=` vacío, SAVK solo puede
+  normalizar esos valores usando `/etc/passwd` y `/etc/group` locales
+- si esa evidencia no alcanza, el resultado DEBE degradar a
+  `INSUFFICIENT_DATA`
 
 ### Sockets
 
@@ -176,6 +180,10 @@ Reglas:
 - un `SocketSpec` vacío es válido y significa “solo verificar existencia”
 - `owner` y `group`, si existen, se comparan por nombre
 - `sockets` observa el nodo con `lstat`; no sigue symlinks
+- la resolución de `owner` y `group` DEBE salir de `/etc/passwd` y `/etc/group`
+  visibles para SAVK o para `--host-root`
+- si no existe un mapping confiable para un UID/GID observado, SAVK DEBE
+  degradar a `INSUFFICIENT_DATA`
 
 ### Paths
 
@@ -200,6 +208,10 @@ Reglas:
 - un `PathSpec` vacío es válido y significa “solo verificar existencia”
 - `owner` y `group`, si existen, se comparan por nombre
 - `paths` observa el nodo con `lstat`; no sigue symlinks
+- la resolución de `owner` y `group` DEBE salir de `/etc/passwd` y `/etc/group`
+  visibles para SAVK o para `--host-root`
+- si no existe un mapping confiable para un UID/GID observado, SAVK DEBE
+  degradar a `INSUFFICIENT_DATA`
 
 ### Identity
 
@@ -282,6 +294,8 @@ Rutas en `paths` y `sockets`:
 - DEBEN referirse al filesystem visto por SAVK o por `--host-root`
 - `--host-root`, si se usa, remapea rutas absolutas bajo ese root solo para
   `paths` y `sockets`
+- bajo `--host-root`, la resolución por nombre de `owner` y `group` también
+  DEBE salir de `<host-root>/etc/passwd` y `<host-root>/etc/group`
 - `--host-root` NO aplica a `services` ni `identity` en `v0.1`
 
 ### Strings

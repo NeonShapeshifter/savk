@@ -3,7 +3,8 @@ package collectors
 import (
 	"context"
 	"fmt"
-	"os/user"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -182,14 +183,11 @@ func TestBuildServiceChecksUsesSystemdDefaultRootUser(t *testing.T) {
 func TestBuildServiceChecksUsesPrimaryGroupWhenGroupPropertyIsBlank(t *testing.T) {
 	t.Parallel()
 
-	current, err := user.Current()
-	if err != nil {
-		t.Fatalf("user.Current() error = %v", err)
-	}
-	group, err := user.LookupGroupId(current.Gid)
-	if err != nil {
-		t.Fatalf("user.LookupGroupId() error = %v", err)
-	}
+	accountRoot := t.TempDir()
+	writeTestAccountFiles(t, accountRoot,
+		[]string{"sensor:x:1001:1002::/nonexistent:/usr/sbin/nologin"},
+		[]string{"sensor:x:1002:"},
+	)
 
 	runner := &fakeCommandRunner{
 		results: map[string]CommandResult{
@@ -198,7 +196,7 @@ func TestBuildServiceChecksUsesPrimaryGroupWhenGroupPropertyIsBlank(t *testing.T
 					"LoadState=loaded",
 					"ActiveState=active",
 					"Restart=no",
-					"User=" + current.Username,
+					"User=1001",
 					"Group=",
 					"AmbientCapabilities=",
 				}, "\n"),
@@ -206,15 +204,15 @@ func TestBuildServiceChecksUsesPrimaryGroupWhenGroupPropertyIsBlank(t *testing.T
 		},
 	}
 
-	checks := BuildServiceChecks(map[string]contract.ServiceSpec{
+	checks := buildServiceChecksWithResolver(map[string]contract.ServiceSpec{
 		"default-group.service": {
 			State: contract.ServiceStateActive,
 			RunAs: &contract.RunAsSpec{
-				User:  current.Username,
-				Group: group.Name,
+				User:  "sensor",
+				Group: "sensor",
 			},
 		},
-	}, runner)
+	}, runner, NewAccountResolver(accountRoot), false)
 
 	results, err := engine.New().Run(context.Background(), checks)
 	if err != nil {
@@ -228,6 +226,51 @@ func TestBuildServiceChecksUsesPrimaryGroupWhenGroupPropertyIsBlank(t *testing.T
 	}
 	if results[2].Status != evidence.StatusPass {
 		t.Fatalf("group result status = %s, want %s", results[2].Status, evidence.StatusPass)
+	}
+}
+
+func TestBuildServiceChecksReturnsInsufficientDataWhenNumericUserCannotBeResolved(t *testing.T) {
+	t.Parallel()
+
+	accountRoot := t.TempDir()
+	writeTestAccountFiles(t, accountRoot, []string{}, []string{"sensor:x:1002:"})
+
+	runner := &fakeCommandRunner{
+		results: map[string]CommandResult{
+			"numeric-user.service": {
+				Stdout: strings.Join([]string{
+					"LoadState=loaded",
+					"ActiveState=active",
+					"Restart=no",
+					"User=1001",
+					"Group=",
+					"AmbientCapabilities=",
+				}, "\n"),
+			},
+		},
+	}
+
+	checks := buildServiceChecksWithResolver(map[string]contract.ServiceSpec{
+		"numeric-user.service": {
+			State: contract.ServiceStateActive,
+			RunAs: &contract.RunAsSpec{
+				User: "sensor",
+			},
+		},
+	}, runner, NewAccountResolver(accountRoot), false)
+
+	results, err := engine.New().Run(context.Background(), checks)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(results))
+	}
+	if results[1].Status != evidence.StatusInsufficientData {
+		t.Fatalf("user result status = %s, want %s", results[1].Status, evidence.StatusInsufficientData)
+	}
+	if results[1].ReasonCode != evidence.ReasonParseError {
+		t.Fatalf("user result reason = %s, want %s", results[1].ReasonCode, evidence.ReasonParseError)
 	}
 }
 
@@ -259,8 +302,6 @@ func TestBuildServiceChecksMapsContextDeadlineToTimeout(t *testing.T) {
 }
 
 func TestResolveSystemctlPathForOSRunnerPinsAllowlistedPath(t *testing.T) {
-	t.Parallel()
-
 	previous := lookPathExecutable
 	lookPathExecutable = func(name string) (string, error) {
 		if name != "systemctl" {
@@ -282,8 +323,6 @@ func TestResolveSystemctlPathForOSRunnerPinsAllowlistedPath(t *testing.T) {
 }
 
 func TestResolveSystemctlPathForOSRunnerRejectsUnexpectedPath(t *testing.T) {
-	t.Parallel()
-
 	previous := lookPathExecutable
 	lookPathExecutable = func(string) (string, error) {
 		return "/tmp/fake/systemctl", nil
@@ -365,4 +404,22 @@ type fakeServiceNamespaceProbe struct {
 func (f fakeServiceNamespaceProbe) PID1Comm(ctx context.Context) (string, error) {
 	_ = ctx
 	return f.value, f.err
+}
+
+func writeTestAccountFiles(t *testing.T, root string, passwdLines, groupLines []string) {
+	t.Helper()
+
+	etcDir := filepath.Join(root, "etc")
+	if err := os.MkdirAll(etcDir, 0o755); err != nil {
+		t.Fatalf("os.MkdirAll(%q) error = %v", etcDir, err)
+	}
+
+	passwdPath := filepath.Join(etcDir, "passwd")
+	groupPath := filepath.Join(etcDir, "group")
+	if err := os.WriteFile(passwdPath, []byte(strings.Join(passwdLines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatalf("os.WriteFile(%q) error = %v", passwdPath, err)
+	}
+	if err := os.WriteFile(groupPath, []byte(strings.Join(groupLines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatalf("os.WriteFile(%q) error = %v", groupPath, err)
+	}
 }

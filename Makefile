@@ -19,6 +19,7 @@ test:
 	$(GO) test ./...
 
 integration:
+	test "$$SAVK_RUN_SYSTEMD_INTEGRATION" = "1"
 	$(GO) test ./cmd/savk -run TestSystemdIntegration -count=1
 
 dist:

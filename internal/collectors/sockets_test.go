@@ -18,7 +18,7 @@ import (
 func TestBuildSocketChecksPassesForExistingSocket(t *testing.T) {
 	t.Parallel()
 
-	currentUser, currentGroup := currentAccount(t)
+	account := currentAccount(t)
 	dir := t.TempDir()
 	target := filepath.Join(dir, "agent.sock")
 	listener, err := net.Listen("unix", target)
@@ -37,8 +37,8 @@ func TestBuildSocketChecksPassesForExistingSocket(t *testing.T) {
 
 	checks := BuildSocketChecks(map[string]contract.SocketSpec{
 		target: {
-			Owner: currentUser.Username,
-			Group: currentGroup.Name,
+			Owner: account.User,
+			Group: account.Group,
 			Mode:  "0660",
 		},
 	}, OSPathChecker{})
@@ -155,6 +155,43 @@ func TestBuildSocketChecksPreservesSocketCollectorOnErrors(t *testing.T) {
 	}
 	if exists.Evidence.Collector != "sockets" {
 		t.Fatalf("exists.Evidence.Collector = %q, want %q", exists.Evidence.Collector, "sockets")
+	}
+}
+
+func TestBuildSocketChecksUsesRootedAccountDatabase(t *testing.T) {
+	t.Parallel()
+
+	hostRoot := t.TempDir()
+	writeTestAccountFiles(t, hostRoot,
+		[]string{"sensor:x:1234:1234::/nonexistent:/usr/sbin/nologin"},
+		[]string{"sensor:x:1234:"},
+	)
+
+	target := "/run/sensor-agent.sock"
+	resolved := filepath.Join(hostRoot, "run", "sensor-agent.sock")
+	checks := BuildSocketChecks(map[string]contract.SocketSpec{
+		target: {
+			Owner: "sensor",
+			Group: "sensor",
+		},
+	}, NewRootedPathChecker(hostRoot, fakePathChecker{
+		entries: map[string]fakeFileInfo{
+			resolved: {
+				mode: os.ModeSocket | 0o660,
+				sys:  &syscall.Stat_t{Uid: 1234, Gid: 1234},
+			},
+		},
+	}))
+
+	results, err := engine.New().Run(context.Background(), checks)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	for _, result := range results {
+		if result.Status != evidence.StatusPass {
+			t.Fatalf("result %s status = %s, want %s", result.CheckID, result.Status, evidence.StatusPass)
+		}
 	}
 }
 

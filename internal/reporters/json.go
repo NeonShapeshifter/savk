@@ -17,6 +17,7 @@ type JSONReportInput struct {
 	RunID           string
 	Target          string
 	Host            string
+	HostRoot        string
 	StartedAt       time.Time
 	DurationMs      int64
 	IncludeRaw      bool
@@ -31,6 +32,7 @@ type JSONReport struct {
 	RunID           string                 `json:"runID"`
 	Target          string                 `json:"target"`
 	Host            string                 `json:"host"`
+	HostRoot        string                 `json:"hostRoot,omitempty"`
 	StartedAt       time.Time              `json:"startedAt"`
 	DurationMs      int64                  `json:"durationMs"`
 	ExitCode        int                    `json:"exitCode"`
@@ -68,6 +70,7 @@ func BuildJSONReport(input JSONReportInput) JSONReport {
 		RunID:           input.RunID,
 		Target:          input.Target,
 		Host:            input.Host,
+		HostRoot:        input.HostRoot,
 		StartedAt:       input.StartedAt.UTC(),
 		DurationMs:      input.DurationMs,
 		ExitCode:        ExitCodeForResults(results),

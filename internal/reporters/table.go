@@ -15,6 +15,9 @@ func RenderTableReport(input JSONReportInput) ([]byte, error) {
 	fmt.Fprintf(&buffer, "RunID: %s\n", report.RunID)
 	fmt.Fprintf(&buffer, "Target: %s\n", report.Target)
 	fmt.Fprintf(&buffer, "Host: %s\n", report.Host)
+	if report.HostRoot != "" {
+		fmt.Fprintf(&buffer, "HostRoot: %s\n", report.HostRoot)
+	}
 	fmt.Fprintf(&buffer, "Started: %s\n", report.StartedAt.Format("2006-01-02T15:04:05Z"))
 	fmt.Fprintf(&buffer, "Duration: %dms\n", report.DurationMs)
 	fmt.Fprintf(

@@ -666,6 +666,9 @@ func TestRunCheckJSONPathsHostRootBypassesNamespaceHeuristic(t *testing.T) {
 	if !strings.Contains(stdout.String(), `"status": "PASS"`) {
 		t.Fatalf("stdout missing PASS result under host-root: %s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), `"hostRoot": "`+hostRoot+`"`) {
+		t.Fatalf("stdout missing hostRoot report context: %s", stdout.String())
+	}
 	if !strings.Contains(stdout.String(), hostRoot+`/etc/savk/config.yaml`) {
 		t.Fatalf("stdout missing resolved host-root path in evidence: %s", stdout.String())
 	}

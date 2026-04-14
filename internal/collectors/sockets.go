@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/user"
 	"sort"
 	"syscall"
 	"time"
@@ -18,6 +17,7 @@ func BuildSocketChecks(sockets map[string]contract.SocketSpec, checker PathCheck
 	if checker == nil {
 		checker = OSPathChecker{}
 	}
+	resolver := accountResolverForPathChecker(checker)
 
 	keys := make([]string, 0, len(sockets))
 	for path := range sockets {
@@ -29,37 +29,41 @@ func BuildSocketChecks(sockets map[string]contract.SocketSpec, checker PathCheck
 	for _, path := range keys {
 		spec := sockets[path]
 		checks = append(checks, socketCheck{
-			id:      fmt.Sprintf("socket.%s.exists", path),
-			path:    path,
-			spec:    spec,
-			checker: checker,
-			kind:    "exists",
+			id:       fmt.Sprintf("socket.%s.exists", path),
+			path:     path,
+			spec:     spec,
+			checker:  checker,
+			resolver: resolver,
+			kind:     "exists",
 		})
 		if spec.Owner != "" {
 			checks = append(checks, socketCheck{
-				id:      fmt.Sprintf("socket.%s.owner", path),
-				path:    path,
-				spec:    spec,
-				checker: checker,
-				kind:    "owner",
+				id:       fmt.Sprintf("socket.%s.owner", path),
+				path:     path,
+				spec:     spec,
+				checker:  checker,
+				resolver: resolver,
+				kind:     "owner",
 			})
 		}
 		if spec.Group != "" {
 			checks = append(checks, socketCheck{
-				id:      fmt.Sprintf("socket.%s.group", path),
-				path:    path,
-				spec:    spec,
-				checker: checker,
-				kind:    "group",
+				id:       fmt.Sprintf("socket.%s.group", path),
+				path:     path,
+				spec:     spec,
+				checker:  checker,
+				resolver: resolver,
+				kind:     "group",
 			})
 		}
 		if spec.Mode != "" {
 			checks = append(checks, socketCheck{
-				id:      fmt.Sprintf("socket.%s.mode", path),
-				path:    path,
-				spec:    spec,
-				checker: checker,
-				kind:    "mode",
+				id:       fmt.Sprintf("socket.%s.mode", path),
+				path:     path,
+				spec:     spec,
+				checker:  checker,
+				resolver: resolver,
+				kind:     "mode",
 			})
 		}
 	}
@@ -68,11 +72,12 @@ func BuildSocketChecks(sockets map[string]contract.SocketSpec, checker PathCheck
 }
 
 type socketCheck struct {
-	id      string
-	path    string
-	spec    contract.SocketSpec
-	checker PathChecker
-	kind    string
+	id       string
+	path     string
+	spec     contract.SocketSpec
+	checker  PathChecker
+	resolver AccountResolver
+	kind     string
 }
 
 func (c socketCheck) ID() string {
@@ -182,23 +187,23 @@ func (c socketCheck) runOwner() evidence.CheckResult {
 		}
 	}
 
-	account, err := user.LookupId(fmt.Sprintf("%d", stat.Uid))
+	account, err := c.resolver.UserNameByUID(stat.Uid)
 	if err != nil {
 		return evidence.CheckResult{
-			Status:     evidence.StatusError,
+			Status:     evidence.StatusInsufficientData,
 			ReasonCode: evidence.ReasonParseError,
 			Evidence: evidence.Evidence{
-				Source:      "os/user.LookupId",
+				Source:      "fs.lstat+accountdb",
 				Collector:   "sockets",
 				CollectedAt: time.Now().UTC(),
-				Raw:         fmt.Sprintf("path=%s error=%s", resolvedPath(c.checker, c.path), err),
+				Raw:         fmt.Sprintf("path=%s uid=%d accountDB=%s error=%s", resolvedPath(c.checker, c.path), stat.Uid, c.resolver.PasswdPath(), err),
 			},
-			Message: fmt.Sprintf("unable to resolve owner UID %d for %s", stat.Uid, c.path),
+			Message: fmt.Sprintf("unable to resolve owner UID %d for %s using %s", stat.Uid, c.path, c.resolver.PasswdPath()),
 		}
 	}
 
 	expected := c.spec.Owner
-	observed := account.Username
+	observed := account
 	status := evidence.StatusPass
 	message := fmt.Sprintf("socket owner matches %s", expected)
 	if observed != expected {
@@ -240,23 +245,23 @@ func (c socketCheck) runGroup() evidence.CheckResult {
 		}
 	}
 
-	group, err := user.LookupGroupId(fmt.Sprintf("%d", stat.Gid))
+	group, err := c.resolver.GroupNameByGID(stat.Gid)
 	if err != nil {
 		return evidence.CheckResult{
-			Status:     evidence.StatusError,
+			Status:     evidence.StatusInsufficientData,
 			ReasonCode: evidence.ReasonParseError,
 			Evidence: evidence.Evidence{
-				Source:      "os/user.LookupGroupId",
+				Source:      "fs.lstat+accountdb",
 				Collector:   "sockets",
 				CollectedAt: time.Now().UTC(),
-				Raw:         fmt.Sprintf("path=%s error=%s", resolvedPath(c.checker, c.path), err),
+				Raw:         fmt.Sprintf("path=%s gid=%d accountDB=%s error=%s", resolvedPath(c.checker, c.path), stat.Gid, c.resolver.GroupPath(), err),
 			},
-			Message: fmt.Sprintf("unable to resolve group GID %d for %s", stat.Gid, c.path),
+			Message: fmt.Sprintf("unable to resolve group GID %d for %s using %s", stat.Gid, c.path, c.resolver.GroupPath()),
 		}
 	}
 
 	expected := c.spec.Group
-	observed := group.Name
+	observed := group
 	status := evidence.StatusPass
 	message := fmt.Sprintf("socket group matches %s", expected)
 	if observed != expected {

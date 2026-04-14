@@ -7,17 +7,14 @@ Esta ruta existe para validar los dominios service-backed en un host
 
 - preflight de namespace
 - `services.state`
-- `identity.uid` vía
-  `service -> (MainPID + ControlGroup) -> /proc/<pid>/{status,cgroup}`
-- assertions reales sobre checks `PASS`, no solo presencia de dominios
-
-No cubre todavía:
-
 - `services.restart`
+- `services.run_as.user`
 - `services.run_as.group`
 - `services.capabilities`
+- `identity.uid`
 - `identity.gid`
 - los capability sets de `identity`
+- assertions reales sobre checks `PASS`, no solo presencia de dominios
 
 ## Requisitos
 
@@ -26,7 +23,8 @@ No cubre todavía:
 
 ## Ejecución rápida
 
-Por defecto usa `systemd-journald.service` y espera `uid=0`.
+Por defecto usa `systemd-journald.service` y deriva expectativas desde el host
+real en el momento del test.
 
 ```bash
 SAVK_RUN_SYSTEMD_INTEGRATION=1 \
@@ -41,12 +39,14 @@ Si en tu host quieres probar otra unidad:
 ```bash
 SAVK_RUN_SYSTEMD_INTEGRATION=1 \
 SAVK_SYSTEMD_INTEGRATION_SERVICE=dbus.service \
-SAVK_SYSTEMD_INTEGRATION_UID=81 \
 GOCACHE=/tmp/savk-go-build \
 make integration GO=/usr/local/go/bin/go
 ```
 
 ## Nota
 
+`make integration` ahora falla si no se habilita explícitamente
+`SAVK_RUN_SYSTEMD_INTEGRATION=1`; un skip ya no cuenta como señal de release.
+
 Esto no reemplaza una matrix por distro. Es la ruta mínima reproducible para
-validar una parte concreta de la superficie service-backed en un sistema real.
+validar la superficie pública service-backed en un sistema real.

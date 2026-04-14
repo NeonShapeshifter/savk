@@ -2,12 +2,18 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"savk/internal/capabilities"
 )
 
 func TestSystemdIntegration(t *testing.T) {
@@ -19,15 +25,45 @@ func TestSystemdIntegration(t *testing.T) {
 	if service == "" {
 		service = "systemd-journald.service"
 	}
-	uid := os.Getenv("SAVK_SYSTEMD_INTEGRATION_UID")
-	if uid == "" {
-		uid = "0"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	properties := integrationSystemctlShow(t, ctx, service, []string{
+		"LoadState",
+		"ActiveState",
+		"Restart",
+		"User",
+		"Group",
+		"AmbientCapabilities",
+		"MainPID",
+		"ControlGroup",
+	})
+	if properties["LoadState"] != "loaded" {
+		t.Fatalf("LoadState = %q, want %q", properties["LoadState"], "loaded")
 	}
-	if _, err := strconv.Atoi(uid); err != nil {
-		t.Fatalf("SAVK_SYSTEMD_INTEGRATION_UID = %q, want integer", uid)
+	if properties["ActiveState"] != "active" {
+		t.Fatalf("ActiveState = %q, want %q", properties["ActiveState"], "active")
 	}
 
+	pid, err := strconv.Atoi(strings.TrimSpace(properties["MainPID"]))
+	if err != nil || pid <= 0 {
+		t.Fatalf("MainPID = %q, want positive integer", properties["MainPID"])
+	}
+
+	processStatus := integrationReadProcStatus(t, pid)
+	expectedUser, err := integrationExpectedServiceUser(properties["User"])
+	if err != nil {
+		t.Fatalf("integrationExpectedServiceUser() error = %v", err)
+	}
+	expectedGroup, err := integrationExpectedServiceGroup(properties["User"], properties["Group"])
+	if err != nil {
+		t.Fatalf("integrationExpectedServiceGroup() error = %v", err)
+	}
+	serviceCaps := capabilities.NormalizeObserved(strings.Fields(properties["AmbientCapabilities"]))
+
 	dir := t.TempDir()
+	contractPath := filepath.Join(dir, "contract.yaml")
 	contractBody := strings.Join([]string{
 		"apiVersion: savk/v1",
 		"kind: ApplianceContract",
@@ -37,13 +73,24 @@ func TestSystemdIntegration(t *testing.T) {
 		"services:",
 		"  " + service + ":",
 		"    state: active",
+		"    run_as:",
+		"      user: " + expectedUser,
+		"      group: " + expectedGroup,
+		"    restart: " + properties["Restart"],
+		"    capabilities: " + integrationInlineList(serviceCaps),
 		"identity:",
 		"  runtime_subject:",
 		"    service: " + service,
-		"    uid: " + uid,
+		"    uid: " + strconv.Itoa(processStatus.uid),
+		"    gid: " + strconv.Itoa(processStatus.gid),
+		"    capabilities:",
+		"      effective: " + integrationInlineList(processStatus.effective),
+		"      permitted: " + integrationInlineList(processStatus.permitted),
+		"      inheritable: " + integrationInlineList(processStatus.inheritable),
+		"      bounding: " + integrationInlineList(processStatus.bounding),
+		"      ambient: " + integrationInlineList(processStatus.ambient),
 	}, "\n") + "\n"
 
-	contractPath := filepath.Join(dir, "contract.yaml")
 	if err := os.WriteFile(contractPath, []byte(contractBody), 0o644); err != nil {
 		t.Fatalf("os.WriteFile(contract) error = %v", err)
 	}
@@ -58,10 +105,13 @@ func TestSystemdIntegration(t *testing.T) {
 
 	type reportResult struct {
 		CheckID string `json:"checkID"`
-		Domain  string `json:"domain"`
 		Status  string `json:"status"`
 	}
+	type reportSummary struct {
+		Pass int `json:"pass"`
+	}
 	type report struct {
+		Summary reportSummary  `json:"summary"`
 		Results []reportResult `json:"results"`
 	}
 
@@ -75,14 +125,262 @@ func TestSystemdIntegration(t *testing.T) {
 		statusByID[result.CheckID] = result.Status
 	}
 
-	expectedChecks := map[string]string{
-		"service.__preflight__.namespace": "PASS",
-		"service." + service + ".state":   "PASS",
-		"identity.runtime_subject.uid":    "PASS",
+	expectedChecks := []string{
+		"service.__preflight__.namespace",
+		"service." + service + ".state",
+		"service." + service + ".restart",
+		"service." + service + ".run_as.user",
+		"service." + service + ".run_as.group",
+		"service." + service + ".capabilities",
+		"identity.runtime_subject.uid",
+		"identity.runtime_subject.gid",
+		"identity.runtime_subject.capabilities.effective",
+		"identity.runtime_subject.capabilities.permitted",
+		"identity.runtime_subject.capabilities.inheritable",
+		"identity.runtime_subject.capabilities.bounding",
+		"identity.runtime_subject.capabilities.ambient",
 	}
-	for checkID, wantStatus := range expectedChecks {
-		if statusByID[checkID] != wantStatus {
-			t.Fatalf("statusByID[%q] = %q, want %q\nstdout=%s", checkID, statusByID[checkID], wantStatus, stdout.String())
+	for _, checkID := range expectedChecks {
+		if statusByID[checkID] != "PASS" {
+			t.Fatalf("statusByID[%q] = %q, want PASS\nstdout=%s", checkID, statusByID[checkID], stdout.String())
 		}
 	}
+	if got.Summary.Pass != len(expectedChecks) {
+		t.Fatalf("summary.pass = %d, want %d\nstdout=%s", got.Summary.Pass, len(expectedChecks), stdout.String())
+	}
+}
+
+type integrationProcStatus struct {
+	uid         int
+	gid         int
+	effective   []string
+	permitted   []string
+	inheritable []string
+	bounding    []string
+	ambient     []string
+}
+
+func integrationSystemctlShow(t *testing.T, ctx context.Context, service string, properties []string) map[string]string {
+	t.Helper()
+
+	args := []string{"show", service}
+	for _, property := range properties {
+		args = append(args, "--property="+property)
+	}
+	cmd := exec.CommandContext(ctx, "systemctl", args...)
+	cmd.Env = append(os.Environ(), "LANG=C", "LC_ALL=C")
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("systemctl show %s error = %v", service, err)
+	}
+
+	result := make(map[string]string, len(properties))
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			t.Fatalf("unexpected systemctl output line %q", line)
+		}
+		result[key] = value
+	}
+
+	for _, property := range properties {
+		if _, ok := result[property]; !ok {
+			t.Fatalf("systemctl output missing property %q", property)
+		}
+	}
+
+	return result
+}
+
+func integrationReadProcStatus(t *testing.T, pid int) integrationProcStatus {
+	t.Helper()
+
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+	if err != nil {
+		t.Fatalf("os.ReadFile(/proc/%d/status) error = %v", pid, err)
+	}
+
+	fields := make(map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			t.Fatalf("unexpected /proc status line %q", line)
+		}
+		fields[key] = strings.TrimSpace(value)
+	}
+
+	uid := integrationParseEffectiveID(t, fields["Uid"])
+	gid := integrationParseEffectiveID(t, fields["Gid"])
+
+	return integrationProcStatus{
+		uid:         uid,
+		gid:         gid,
+		effective:   integrationParseCapabilityMask(t, fields["CapEff"]),
+		permitted:   integrationParseCapabilityMask(t, fields["CapPrm"]),
+		inheritable: integrationParseCapabilityMask(t, fields["CapInh"]),
+		bounding:    integrationParseCapabilityMask(t, fields["CapBnd"]),
+		ambient:     integrationParseCapabilityMask(t, fields["CapAmb"]),
+	}
+}
+
+func integrationParseEffectiveID(t *testing.T, value string) int {
+	t.Helper()
+
+	parts := strings.Fields(value)
+	if len(parts) < 2 {
+		t.Fatalf("effective id field = %q, want at least two columns", value)
+	}
+	result, err := strconv.Atoi(parts[1])
+	if err != nil {
+		t.Fatalf("strconv.Atoi(%q) error = %v", parts[1], err)
+	}
+	return result
+}
+
+func integrationParseCapabilityMask(t *testing.T, value string) []string {
+	t.Helper()
+
+	mask, err := strconv.ParseUint(strings.TrimSpace(value), 16, 64)
+	if err != nil {
+		t.Fatalf("strconv.ParseUint(%q) error = %v", value, err)
+	}
+
+	names := make([]string, 0)
+	for bit := 0; bit < 64; bit++ {
+		if mask&(1<<bit) == 0 {
+			continue
+		}
+		name := capabilities.LinuxCapabilityName(bit)
+		if name == "" {
+			name = fmt.Sprintf("CAP_UNKNOWN_%d", bit)
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
+func integrationExpectedServiceUser(rawUser string) (string, error) {
+	rawUser = strings.TrimSpace(rawUser)
+	if rawUser == "" {
+		return "root", nil
+	}
+	resolver := accountResolverForIntegration()
+	return resolver.NormalizeUserValue(rawUser)
+}
+
+func integrationExpectedServiceGroup(rawUser, rawGroup string) (string, error) {
+	resolver := accountResolverForIntegration()
+	rawGroup = strings.TrimSpace(rawGroup)
+	if rawGroup != "" {
+		return resolver.NormalizeGroupValue(rawGroup)
+	}
+
+	userName, err := integrationExpectedServiceUser(rawUser)
+	if err != nil {
+		return "", err
+	}
+	return resolver.PrimaryGroupNameByUser(userName)
+}
+
+func integrationInlineList(values []string) string {
+	if len(values) == 0 {
+		return "[]"
+	}
+
+	quoted := make([]string, 0, len(values))
+	for _, value := range values {
+		quoted = append(quoted, strconv.Quote(value))
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
+func accountResolverForIntegration() interface {
+	NormalizeUserValue(value string) (string, error)
+	NormalizeGroupValue(value string) (string, error)
+	PrimaryGroupNameByUser(user string) (string, error)
+} {
+	return integrationAccountResolver
+}
+
+var integrationAccountResolver = newIntegrationAccountResolver()
+
+func newIntegrationAccountResolver() interface {
+	NormalizeUserValue(value string) (string, error)
+	NormalizeGroupValue(value string) (string, error)
+	PrimaryGroupNameByUser(user string) (string, error)
+} {
+	type accountResolver interface {
+		NormalizeUserValue(value string) (string, error)
+		NormalizeGroupValue(value string) (string, error)
+		PrimaryGroupNameByUser(user string) (string, error)
+	}
+
+	return accountResolver(integrationLocalAccountResolver{})
+}
+
+type integrationLocalAccountResolver struct{}
+
+func (integrationLocalAccountResolver) NormalizeUserValue(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || !integrationIsNumeric(value) {
+		return value, nil
+	}
+	return integrationLookupNameByID("/etc/passwd", value, 2)
+}
+
+func (integrationLocalAccountResolver) NormalizeGroupValue(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || !integrationIsNumeric(value) {
+		return value, nil
+	}
+	return integrationLookupNameByID("/etc/group", value, 2)
+}
+
+func (integrationLocalAccountResolver) PrimaryGroupNameByUser(user string) (string, error) {
+	passwdData, err := os.ReadFile("/etc/passwd")
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(passwdData)), "\n") {
+		parts := strings.Split(line, ":")
+		if len(parts) < 4 || parts[0] != user {
+			continue
+		}
+		return integrationLookupNameByID("/etc/group", parts[3], 2)
+	}
+	return "", fmt.Errorf("user %q not found in /etc/passwd", user)
+}
+
+func integrationLookupNameByID(path, rawID string, idIndex int) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		parts := strings.Split(line, ":")
+		if len(parts) <= idIndex || parts[idIndex] != rawID {
+			continue
+		}
+		if strings.TrimSpace(parts[0]) == "" {
+			break
+		}
+		return parts[0], nil
+	}
+	return "", fmt.Errorf("id %s not found in %s", rawID, path)
+}
+
+func integrationIsNumeric(value string) bool {
+	if value == "" {
+		return false
+	}
+	_, err := strconv.Atoi(value)
+	return err == nil
 }

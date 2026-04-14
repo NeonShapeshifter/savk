@@ -24,15 +24,14 @@ Prerequisitos:
 
 - `go` disponible en `PATH`
 - suite verde con `make test`
-- si quieres afirmar validación real para service-backed domains, correr también
-  la ruta de [integration.md](integration.md)
+- correr también la ruta de [integration.md](integration.md) con
+  `SAVK_RUN_SYSTEMD_INTEGRATION=1`
 
 Alcance honesto de esa integración:
 
 - cubre namespace preflight
-- cubre `services.state`
-- cubre `identity.uid`
-- no demuestra toda la superficie de `services` ni de `identity`
+- cubre toda la superficie pública service-backed del release
+- sigue siendo una ruta mínima sobre un host real, no una matrix por distro
 
 Build local:
 
@@ -46,9 +45,10 @@ oficial de SAVK sale alineado con la postura de single-binary release.
 
 Tradeoff explícito:
 
-- el binario oficial usa el comportamiento pure-Go de `os/user`
-- por tanto, los checks por nombre de `owner`/`group` dependen de la
-  resolución local de cuentas visible para ese binario, no de libc/NSS
+- los checks por nombre de `owner`/`group` dependen de `/etc/passwd` y
+  `/etc/group` visibles para SAVK o para `--host-root`, no de libc/NSS
+- si esos archivos no ofrecen evidencia suficiente para resolver nombres,
+  SAVK degrada a `INSUFFICIENT_DATA`
 
 Artifact de release para la plataforma actual:
 

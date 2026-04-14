@@ -63,12 +63,16 @@ Fields recomendadas:
 | Field | Type | Required | Notes |
 |---|---|---:|---|
 | `exitCode` | integer | no | código de salida final |
+| `hostRoot` | string | no | root filesystem remapeado usado por `--host-root` |
 | `summary` | object | no | conteos por estado |
 
 ### Top-level semantics
 
 - `contractHash` DEBE ser el SHA-256 de los bytes exactos consumidos por el parser
 - `runID` DEBE tratarse como string opaco
+- `host` identifica al observador que ejecutó SAVK
+- `hostRoot`, si existe, DEBE reflejar el root filesystem remapeado usado para
+  `paths` y `sockets`
 - `startedAt` DEBE serializarse en UTC
 - `durationMs` DEBE ser `>= 0`
 - `results` DEBE estar ordenado de forma estable
