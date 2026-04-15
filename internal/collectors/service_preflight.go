@@ -81,7 +81,7 @@ func (c serviceNamespaceCheck) Prerequisites() []string {
 
 func (c serviceNamespaceCheck) Run(ctx context.Context) evidence.CheckResult {
 	if err := ctx.Err(); err != nil {
-		return serviceNamespaceError(c.domain, evidence.ReasonTimeout, "collector context cancelled before namespace preflight started", err.Error())
+		return serviceNamespaceError(c.domain, evidence.ReasonTimeout, "collector context cancelled before observer-local namespace preflight started", err.Error())
 	}
 
 	if c.target != contract.TargetLinuxSystemd {
@@ -96,7 +96,7 @@ func (c serviceNamespaceCheck) Run(ctx context.Context) evidence.CheckResult {
 				CollectedAt: time.Now().UTC(),
 				Raw:         c.target,
 			},
-			Message: fmt.Sprintf("%s namespace preflight does not apply to target %s", c.domain, c.target),
+			Message: fmt.Sprintf("%s observer-local namespace preflight does not apply to target %s", c.domain, c.target),
 		}
 	}
 
@@ -107,10 +107,10 @@ func (c serviceNamespaceCheck) Run(ctx context.Context) evidence.CheckResult {
 			reason = evidence.ReasonPermissionDenied
 		}
 
-		return serviceNamespaceError(c.domain, reason, "failed to inspect /proc/1/comm", err.Error())
+		return serviceNamespaceError(c.domain, reason, "failed to inspect observer-local /proc/1/comm", err.Error())
 	}
 	if observed == "" {
-		return serviceNamespaceError(c.domain, evidence.ReasonParseError, "empty /proc/1/comm while checking namespace", "")
+		return serviceNamespaceError(c.domain, evidence.ReasonParseError, "empty observer-local /proc/1/comm while checking namespace", "")
 	}
 	if observed != "systemd" {
 		return evidence.CheckResult{
@@ -124,7 +124,7 @@ func (c serviceNamespaceCheck) Run(ctx context.Context) evidence.CheckResult {
 				CollectedAt: time.Now().UTC(),
 				Raw:         observed,
 			},
-			Message: fmt.Sprintf("expected PID 1 to be systemd for target %s, observed %s", c.target, observed),
+			Message: fmt.Sprintf("observer-local namespace preflight failed: expected observer-local PID 1 to be systemd for target %s, observed %s", c.target, observed),
 		}
 	}
 
@@ -139,7 +139,7 @@ func (c serviceNamespaceCheck) Run(ctx context.Context) evidence.CheckResult {
 			CollectedAt: time.Now().UTC(),
 			Raw:         observed,
 		},
-		Message: fmt.Sprintf("%s namespace preflight confirms PID 1 is systemd", c.domain),
+		Message: fmt.Sprintf("%s observer-local namespace preflight confirms PID 1 is systemd", c.domain),
 	}
 }
 

@@ -68,6 +68,56 @@ func TestRunValidateExitCodes(t *testing.T) {
 	}
 }
 
+func TestRunValidateAndCheckRejectSameInactiveIdentityContract(t *testing.T) {
+	dir := t.TempDir()
+	contractBody := strings.Join([]string{
+		"apiVersion: savk/v1",
+		"kind: ApplianceContract",
+		"metadata:",
+		"  name: inactive-identity",
+		"  target: linux-systemd",
+		"services:",
+		"  sensor-agent.service:",
+		"    state: inactive",
+		"identity:",
+		"  sensor_runtime:",
+		"    service: sensor-agent.service",
+		"    uid: 1001",
+	}, "\n") + "\n"
+
+	contractPath := filepath.Join(dir, "contract.yaml")
+	if err := os.WriteFile(contractPath, []byte(contractBody), 0o644); err != nil {
+		t.Fatalf("os.WriteFile(contract) error = %v", err)
+	}
+
+	const want = "references sensor-agent.service but services.sensor-agent.service.state is inactive; runtime identity requires active at identity.sensor_runtime.service"
+
+	for _, tc := range []struct {
+		name     string
+		args     []string
+		wantCode int
+	}{
+		{name: "validate", args: []string{"validate", "--contract", contractPath}, wantCode: 3},
+		{name: "check", args: []string{"check", "--contract", contractPath, "--format", "json"}, wantCode: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			code := run(tc.args, &stdout, &stderr)
+			if code != tc.wantCode {
+				t.Fatalf("run(%s) code = %d, want %d", tc.name, code, tc.wantCode)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout = %q, want empty", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), want) {
+				t.Fatalf("stderr = %q, want substring %q", stderr.String(), want)
+			}
+		})
+	}
+}
+
 func TestRunCheckJSON(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "config.yaml")

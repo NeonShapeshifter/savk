@@ -60,6 +60,7 @@ func TestParseInvalidFixtures(t *testing.T) {
 		{name: "invalid-capability.yaml", want: `invalid capability "net_admin"`},
 		{name: "identity-missing-service.yaml", want: `missing required field at identity.sensor_runtime.service`},
 		{name: "identity-empty-capabilities.yaml", want: `at least one capability set must be defined at identity.sensor_runtime.capabilities`},
+		{name: "identity-inactive-service.yaml", want: `references sensor-agent.service but services.sensor-agent.service.state is inactive; runtime identity requires active at identity.sensor_runtime.service`},
 		{name: "empty-contract.yaml", want: "empty contract: at least one of services, sockets, paths, identity must be non-empty"},
 	}
 
@@ -96,6 +97,7 @@ func TestParseInvalidFixturesGolden(t *testing.T) {
 		"invalid-capability",
 		"identity-missing-service",
 		"identity-empty-capabilities",
+		"identity-inactive-service",
 		"empty-contract",
 	}
 

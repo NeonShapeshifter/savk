@@ -1,0 +1,12 @@
+apiVersion: savk/v1
+kind: ApplianceContract
+metadata:
+  name: identity-inactive-service
+  target: linux-systemd
+services:
+  sensor-agent.service:
+    state: inactive
+identity:
+  sensor_runtime:
+    service: sensor-agent.service
+    uid: 1001

@@ -35,15 +35,19 @@ type fileAccountResolver struct {
 	passwdPath string
 	groupPath  string
 
-	passwdOnce   sync.Once
-	passwdByUID  map[uint32]passwdEntry
-	passwdByName map[string]passwdEntry
-	passwdErr    error
+	passwdOnce    sync.Once
+	passwdByUID   map[uint32]passwdEntry
+	passwdByName  map[string]passwdEntry
+	passwdUIDDup  map[uint32]struct{}
+	passwdNameDup map[string]struct{}
+	passwdErr     error
 
-	groupOnce   sync.Once
-	groupByGID  map[uint32]groupEntry
-	groupByName map[string]groupEntry
-	groupErr    error
+	groupOnce    sync.Once
+	groupByGID   map[uint32]groupEntry
+	groupByName  map[string]groupEntry
+	groupGIDDup  map[uint32]struct{}
+	groupNameDup map[string]struct{}
+	groupErr     error
 }
 
 func NewAccountResolver(root string) AccountResolver {
@@ -84,6 +88,9 @@ func (r *fileAccountResolver) UserNameByUID(uid uint32) (string, error) {
 	if err := r.loadPasswd(); err != nil {
 		return "", err
 	}
+	if _, ambiguous := r.passwdUIDDup[uid]; ambiguous {
+		return "", fmt.Errorf("uid %d is ambiguous in %s", uid, r.passwdPath)
+	}
 
 	entry, ok := r.passwdByUID[uid]
 	if !ok {
@@ -95,6 +102,9 @@ func (r *fileAccountResolver) UserNameByUID(uid uint32) (string, error) {
 func (r *fileAccountResolver) GroupNameByGID(gid uint32) (string, error) {
 	if err := r.loadGroup(); err != nil {
 		return "", err
+	}
+	if _, ambiguous := r.groupGIDDup[gid]; ambiguous {
+		return "", fmt.Errorf("gid %d is ambiguous in %s", gid, r.groupPath)
 	}
 
 	entry, ok := r.groupByGID[gid]
@@ -111,18 +121,21 @@ func (r *fileAccountResolver) PrimaryGroupNameByUser(user string) (string, error
 	if err := r.loadGroup(); err != nil {
 		return "", err
 	}
+	if _, ambiguous := r.passwdNameDup[user]; ambiguous {
+		return "", fmt.Errorf("user %q is ambiguous in %s", user, r.passwdPath)
+	}
 
 	entry, ok := r.passwdByName[user]
 	if !ok {
 		return "", fmt.Errorf("user %q is not present in %s", user, r.passwdPath)
 	}
 
-	group, ok := r.groupByGID[entry.gid]
-	if !ok {
-		return "", fmt.Errorf("primary gid %d for user %q is not present in %s", entry.gid, user, r.groupPath)
+	group, err := r.GroupNameByGID(entry.gid)
+	if err != nil {
+		return "", fmt.Errorf("primary gid %d for user %q: %w", entry.gid, user, err)
 	}
 
-	return group.name, nil
+	return group, nil
 }
 
 func (r *fileAccountResolver) NormalizeUserValue(value string) (string, error) {
@@ -157,6 +170,8 @@ func (r *fileAccountResolver) loadPasswd() error {
 	r.passwdOnce.Do(func() {
 		r.passwdByUID = make(map[uint32]passwdEntry)
 		r.passwdByName = make(map[string]passwdEntry)
+		r.passwdUIDDup = make(map[uint32]struct{})
+		r.passwdNameDup = make(map[string]struct{})
 
 		file, err := os.Open(r.passwdPath)
 		if err != nil {
@@ -202,10 +217,18 @@ func (r *fileAccountResolver) loadPasswd() error {
 				uid:  uint32(uid),
 				gid:  uint32(gid),
 			}
-			if _, exists := r.passwdByUID[entry.uid]; !exists {
+			if existing, exists := r.passwdByUID[entry.uid]; exists {
+				if existing != entry {
+					r.passwdUIDDup[entry.uid] = struct{}{}
+				}
+			} else {
 				r.passwdByUID[entry.uid] = entry
 			}
-			if _, exists := r.passwdByName[entry.name]; !exists {
+			if existing, exists := r.passwdByName[entry.name]; exists {
+				if existing != entry {
+					r.passwdNameDup[entry.name] = struct{}{}
+				}
+			} else {
 				r.passwdByName[entry.name] = entry
 			}
 		}
@@ -221,6 +244,8 @@ func (r *fileAccountResolver) loadGroup() error {
 	r.groupOnce.Do(func() {
 		r.groupByGID = make(map[uint32]groupEntry)
 		r.groupByName = make(map[string]groupEntry)
+		r.groupGIDDup = make(map[uint32]struct{})
+		r.groupNameDup = make(map[string]struct{})
 
 		file, err := os.Open(r.groupPath)
 		if err != nil {
@@ -260,10 +285,18 @@ func (r *fileAccountResolver) loadGroup() error {
 				name: name,
 				gid:  uint32(gid),
 			}
-			if _, exists := r.groupByGID[entry.gid]; !exists {
+			if existing, exists := r.groupByGID[entry.gid]; exists {
+				if existing != entry {
+					r.groupGIDDup[entry.gid] = struct{}{}
+				}
+			} else {
 				r.groupByGID[entry.gid] = entry
 			}
-			if _, exists := r.groupByName[entry.name]; !exists {
+			if existing, exists := r.groupByName[entry.name]; exists {
+				if existing != entry {
+					r.groupNameDup[entry.name] = struct{}{}
+				}
+			} else {
 				r.groupByName[entry.name] = entry
 			}
 		}

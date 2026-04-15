@@ -87,8 +87,8 @@ paths:
 
 - `paths`: slice principal hoy. End-to-end, real filesystem checks, honesto para existencia, tipo, modo, owner y group.
 - `sockets`: filesystem-backed, implementado con `lstat` y tests reales de Unix socket cuando el entorno lo permite.
-- `services`: implementado para `linux-systemd`, cubierto por unit tests y una ruta de integración real que valida toda la superficie pública service-backed.
-- `identity`: runtime process identity via `service -> (MainPID + ControlGroup) -> /proc/<pid>/{status,cgroup}`, con unit tests y cobertura de integración real para `uid`, `gid` y capability sets.
+- `services`: implementado para `linux-systemd` observer-local, cubierto por unit tests y una ruta de integración real mínima sobre un host real. La prueba real hoy sigue siendo estrecha y no demuestra todas las ramas service-backed en todos los hosts.
+- `identity`: runtime process identity observer-local via `service -> (MainPID + ControlGroup) -> /proc/<pid>/{status,cgroup}`. Tiene unit tests y una ruta de integración real mínima, pero no prueba de forma amplia entornos mixed-namespace ni todas las combinaciones de servicio reales.
 
 Superficie actual por dominio:
 
@@ -99,12 +99,13 @@ Superficie actual por dominio:
 
 ## Operational notes
 
+- `services` e `identity` son observer-local only en `v0.1.x`
 - `services` asume target `linux-systemd`
 - `paths` y `sockets` observan el nodo con `lstat`; no siguen symlinks
-- sin `--host-root`, `paths`, `sockets` y `services` hacen preflight de namespace
-  sobre `/proc/1/comm`
-- si PID 1 no es `systemd`, el preflight reporta `NAMESPACE_ISOLATION` y los
-  checks dependientes quedan bloqueados con `PREREQUISITE_FAILED`
+- sin `--host-root`, `paths`, `sockets` y la ruta service-backed hacen
+  preflight sobre el `/proc/1/comm` observer-local
+- si el PID 1 observer-local no es `systemd`, el preflight reporta
+  `NAMESPACE_ISOLATION` y los checks dependientes quedan bloqueados
 - `--host-root` remapea solo `paths` y `sockets` a un root explícito del host
 - `host` en el reporte identifica al observador; si se usa `--host-root`, el
   reporte añade `hostRoot` para dejar explícito el root observado
@@ -116,8 +117,11 @@ Superficie actual por dominio:
   contra `/etc/passwd` y `/etc/group` del sistema observado; si no hay mapping
   confiable, degradan a `INSUFFICIENT_DATA`
 - los checks `services.run_as.user` y `services.run_as.group` solo resuelven
-  IDs numéricos y grupos primarios vía `/etc/passwd` y `/etc/group` locales; si
-  esa evidencia no alcanza, degradan a `INSUFFICIENT_DATA`
+  IDs numéricos y grupos primarios vía `/etc/passwd` y `/etc/group`
+  observer-locales; si esa evidencia no alcanza o es ambigua, degradan a
+  `INSUFFICIENT_DATA`
+- SAVK no intenta demostrar en `v0.1.x` que `systemctl`, `/proc/<pid>` y las
+  account DB locales pertenezcan a un target distinto del observador
 - `json` es el contrato público estable; `table` es salida humana
 - exit codes:
 
@@ -136,9 +140,13 @@ Superficie actual por dominio:
 - la resolución por nombre depende de `/etc/passwd` y `/etc/group` visibles para
   SAVK; cuentas solo-NSS fuera de esos archivos pueden degradar a
   `INSUFFICIENT_DATA`
+- para `services` e `identity`, la semántica actual es observer-local; SAVK no
+  soporta en `v0.1.x` mixed-namespace con target service-backed separado del
+  observador
 - para `services` e `identity`, algunas clasificaciones de fallo todavía dependen
   de `systemctl` y no de una API nativa de systemd
 - la integración real incluida en el repo requiere opt-in explícito y un host
-  `linux-systemd` real; fuera de eso, la confianza sigue viniendo de unit tests
+  `linux-systemd` real; fuera de eso, la confianza sigue viniendo sobre todo de
+  unit tests
 - no hay remediación, remote execution, snapshots ni SARIF
 - el empaquetado recomendado es binario o tarball; `npm` y `pnpm` no forman parte del release

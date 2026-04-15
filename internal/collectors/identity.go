@@ -190,9 +190,9 @@ func (c identityCheck) Run(ctx context.Context) evidence.CheckResult {
 		case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 			return c.errorResult(evidence.StatusError, evidence.ReasonTimeout, fmt.Sprintf("collector timed out while reading runtime identity for service %s", c.spec.Service), observed)
 		case errors.Is(err, errNamespaceIsolation):
-			return c.errorResult(evidence.StatusError, evidence.ReasonNamespaceIsolation, fmt.Sprintf("systemd is not reachable for service %s", c.spec.Service), observed)
+			return c.errorResult(evidence.StatusError, evidence.ReasonNamespaceIsolation, fmt.Sprintf("service-backed checks are observer-local in v0.1.x; observer-local systemd is not reachable for service %s", c.spec.Service), observed)
 		case errors.Is(err, errPermissionDenied), errors.Is(err, fs.ErrPermission):
-			return c.errorResult(evidence.StatusError, evidence.ReasonPermissionDenied, fmt.Sprintf("permission denied while reading runtime identity for service %s", c.spec.Service), observed)
+			return c.errorResult(evidence.StatusError, evidence.ReasonPermissionDenied, fmt.Sprintf("permission denied while reading observer-local runtime identity for service %s", c.spec.Service), observed)
 		case errors.Is(err, errCommandUnavailable), errors.Is(err, errUnexpectedCommand):
 			return c.errorResult(evidence.StatusError, evidence.ReasonParseError, fmt.Sprintf("systemctl executable is not available or not allowlisted for service %s", c.spec.Service), observed)
 		case errors.Is(err, errMainPIDParse):

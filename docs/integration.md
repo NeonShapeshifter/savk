@@ -14,7 +14,17 @@ Esta ruta existe para validar los dominios service-backed en un host
 - `identity.uid`
 - `identity.gid`
 - los capability sets de `identity`
-- assertions reales sobre checks `PASS`, no solo presencia de dominios
+- assertions reales sobre checks `PASS` en una ruta observer-local, no solo
+  presencia de dominios
+
+Límite honesto:
+
+- esta integración prueba una ruta observer-local real, no una garantía general
+  sobre mixed-namespace ni una matrix por distro
+- el subject por defecto intenta elegir una unidad activa con propiedades más
+  ricas; si no existe, cae al fallback seguro
+- aun así, la cobertura real sigue dependiendo de la unidad disponible en ese
+  host
 
 ## Requisitos
 
@@ -23,8 +33,10 @@ Esta ruta existe para validar los dominios service-backed en un host
 
 ## Ejecución rápida
 
-Por defecto usa `systemd-journald.service` y deriva expectativas desde el host
-real en el momento del test.
+Por defecto intenta elegir una unidad activa con `User`, `Group` o
+`AmbientCapabilities` más informativas y deriva expectativas desde el host
+observer-local en el momento del test. Si no encuentra una mejor candidata,
+usa el fallback disponible.
 
 ```bash
 SAVK_RUN_SYSTEMD_INTEGRATION=1 \
@@ -49,4 +61,4 @@ make integration GO=/usr/local/go/bin/go
 `SAVK_RUN_SYSTEMD_INTEGRATION=1`; un skip ya no cuenta como señal de release.
 
 Esto no reemplaza una matrix por distro. Es la ruta mínima reproducible para
-validar la superficie pública service-backed en un sistema real.
+validar una ruta service-backed observer-local en un sistema real.

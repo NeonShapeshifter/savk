@@ -274,6 +274,134 @@ func TestBuildServiceChecksReturnsInsufficientDataWhenNumericUserCannotBeResolve
 	}
 }
 
+func TestBuildServiceChecksReturnInsufficientDataWhenNumericRunAsValuesAreAmbiguous(t *testing.T) {
+	t.Parallel()
+
+	accountRoot := t.TempDir()
+	writeTestAccountFiles(t, accountRoot,
+		[]string{
+			"alpha:x:1001:1002::/nonexistent:/usr/sbin/nologin",
+			"beta:x:1001:1002::/nonexistent:/usr/sbin/nologin",
+		},
+		[]string{
+			"alpha:x:1002:",
+			"beta:x:1002:",
+		},
+	)
+
+	runner := &fakeCommandRunner{
+		results: map[string]CommandResult{
+			"ambiguous-user.service": {
+				Stdout: strings.Join([]string{
+					"LoadState=loaded",
+					"ActiveState=active",
+					"Restart=no",
+					"User=1001",
+					"Group=1002",
+					"AmbientCapabilities=",
+				}, "\n"),
+			},
+		},
+	}
+
+	checks := buildServiceChecksWithResolver(map[string]contract.ServiceSpec{
+		"ambiguous-user.service": {
+			State: contract.ServiceStateActive,
+			RunAs: &contract.RunAsSpec{
+				User:  "alpha",
+				Group: "alpha",
+			},
+		},
+	}, runner, NewAccountResolver(accountRoot), false)
+
+	results, err := engine.New().Run(context.Background(), checks)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("len(results) = %d, want 3", len(results))
+	}
+	if results[1].Status != evidence.StatusInsufficientData {
+		t.Fatalf("user result status = %s, want %s", results[1].Status, evidence.StatusInsufficientData)
+	}
+	if results[1].ReasonCode != evidence.ReasonParseError {
+		t.Fatalf("user result reason = %s, want %s", results[1].ReasonCode, evidence.ReasonParseError)
+	}
+	if results[2].Status != evidence.StatusInsufficientData {
+		t.Fatalf("group result status = %s, want %s", results[2].Status, evidence.StatusInsufficientData)
+	}
+	if results[2].ReasonCode != evidence.ReasonParseError {
+		t.Fatalf("group result reason = %s, want %s", results[2].ReasonCode, evidence.ReasonParseError)
+	}
+}
+
+func TestBuildServiceChecksReturnsInsufficientDataWhenPrimaryGroupLookupIsAmbiguous(t *testing.T) {
+	t.Parallel()
+
+	accountRoot := t.TempDir()
+	writeTestAccountFiles(t, accountRoot,
+		[]string{
+			"sensor:x:1001:1002::/nonexistent:/usr/sbin/nologin",
+			"sensor:x:1003:1004::/nonexistent:/usr/sbin/nologin",
+		},
+		[]string{
+			"sensor-a:x:1002:",
+			"sensor-b:x:1004:",
+		},
+	)
+
+	runner := &fakeCommandRunner{
+		results: map[string]CommandResult{
+			"ambiguous-primary-group.service": {
+				Stdout: strings.Join([]string{
+					"LoadState=loaded",
+					"ActiveState=active",
+					"Restart=no",
+					"User=sensor",
+					"Group=",
+					"AmbientCapabilities=",
+				}, "\n"),
+			},
+		},
+	}
+
+	checks := buildServiceChecksWithResolver(map[string]contract.ServiceSpec{
+		"ambiguous-primary-group.service": {
+			State: contract.ServiceStateActive,
+			RunAs: &contract.RunAsSpec{
+				User:  "sensor",
+				Group: "sensor-a",
+			},
+		},
+	}, runner, NewAccountResolver(accountRoot), false)
+
+	results, err := engine.New().Run(context.Background(), checks)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("len(results) = %d, want 3", len(results))
+	}
+
+	byID := make(map[string]evidence.CheckResult, len(results))
+	for _, result := range results {
+		byID[result.CheckID] = result
+	}
+
+	user := byID["service.ambiguous-primary-group.service.run_as.user"]
+	if user.Status != evidence.StatusPass {
+		t.Fatalf("user result status = %s, want %s", user.Status, evidence.StatusPass)
+	}
+
+	group := byID["service.ambiguous-primary-group.service.run_as.group"]
+	if group.Status != evidence.StatusInsufficientData {
+		t.Fatalf("group result status = %s, want %s", group.Status, evidence.StatusInsufficientData)
+	}
+	if group.ReasonCode != evidence.ReasonParseError {
+		t.Fatalf("group result reason = %s, want %s", group.ReasonCode, evidence.ReasonParseError)
+	}
+}
+
 func TestBuildServiceChecksMapsContextDeadlineToTimeout(t *testing.T) {
 	t.Parallel()
 

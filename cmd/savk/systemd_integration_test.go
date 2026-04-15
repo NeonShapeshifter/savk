@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,35 +17,39 @@ import (
 	"savk/internal/capabilities"
 )
 
+var integrationProperties = []string{
+	"LoadState",
+	"ActiveState",
+	"Restart",
+	"User",
+	"Group",
+	"AmbientCapabilities",
+	"MainPID",
+	"ControlGroup",
+}
+
 func TestSystemdIntegration(t *testing.T) {
 	if os.Getenv("SAVK_RUN_SYSTEMD_INTEGRATION") != "1" {
 		t.Skip("set SAVK_RUN_SYSTEMD_INTEGRATION=1 to run against a real linux-systemd host")
 	}
 
-	service := os.Getenv("SAVK_SYSTEMD_INTEGRATION_SERVICE")
-	if service == "" {
-		service = "systemd-journald.service"
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	properties := integrationSystemctlShow(t, ctx, service, []string{
-		"LoadState",
-		"ActiveState",
-		"Restart",
-		"User",
-		"Group",
-		"AmbientCapabilities",
-		"MainPID",
-		"ControlGroup",
-	})
+	service, properties := integrationSelectService(t, ctx)
 	if properties["LoadState"] != "loaded" {
 		t.Fatalf("LoadState = %q, want %q", properties["LoadState"], "loaded")
 	}
 	if properties["ActiveState"] != "active" {
 		t.Fatalf("ActiveState = %q, want %q", properties["ActiveState"], "active")
 	}
+	t.Logf(
+		"observer-local integration subject: %s (user=%q group=%q ambient=%q)",
+		service,
+		properties["User"],
+		properties["Group"],
+		properties["AmbientCapabilities"],
+	)
 
 	pid, err := strconv.Atoi(strings.TrimSpace(properties["MainPID"]))
 	if err != nil || pid <= 0 {
@@ -163,9 +168,68 @@ type integrationProcStatus struct {
 	ambient     []string
 }
 
+func integrationSelectService(t *testing.T, ctx context.Context) (string, map[string]string) {
+	t.Helper()
+
+	if explicit := strings.TrimSpace(os.Getenv("SAVK_SYSTEMD_INTEGRATION_SERVICE")); explicit != "" {
+		return explicit, integrationSystemctlShow(t, ctx, explicit, integrationProperties)
+	}
+
+	candidates := []string{
+		"dbus.service",
+		"systemd-resolved.service",
+		"systemd-networkd.service",
+		"systemd-journald.service",
+	}
+
+	bestService := ""
+	bestScore := -1
+	var bestProperties map[string]string
+	for _, service := range candidates {
+		properties, err := integrationTrySystemctlShow(ctx, service, integrationProperties)
+		if err != nil {
+			continue
+		}
+		if properties["LoadState"] != "loaded" || properties["ActiveState"] != "active" {
+			continue
+		}
+
+		score := 0
+		if strings.TrimSpace(properties["User"]) != "" {
+			score++
+		}
+		if strings.TrimSpace(properties["Group"]) != "" {
+			score++
+		}
+		if strings.TrimSpace(properties["AmbientCapabilities"]) != "" {
+			score++
+		}
+		if score > bestScore {
+			bestService = service
+			bestScore = score
+			bestProperties = properties
+		}
+	}
+
+	if bestService == "" {
+		t.Fatalf("no active observer-local integration subject found in candidates %v", candidates)
+	}
+
+	return bestService, bestProperties
+}
+
 func integrationSystemctlShow(t *testing.T, ctx context.Context, service string, properties []string) map[string]string {
 	t.Helper()
 
+	result, err := integrationTrySystemctlShow(ctx, service, properties)
+	if err != nil {
+		t.Fatalf("systemctl show %s error = %v", service, err)
+	}
+
+	return result
+}
+
+func integrationTrySystemctlShow(ctx context.Context, service string, properties []string) (map[string]string, error) {
 	args := []string{"show", service}
 	for _, property := range properties {
 		args = append(args, "--property="+property)
@@ -174,7 +238,7 @@ func integrationSystemctlShow(t *testing.T, ctx context.Context, service string,
 	cmd.Env = append(os.Environ(), "LANG=C", "LC_ALL=C")
 	output, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("systemctl show %s error = %v", service, err)
+		return nil, err
 	}
 
 	result := make(map[string]string, len(properties))
@@ -185,18 +249,22 @@ func integrationSystemctlShow(t *testing.T, ctx context.Context, service string,
 		}
 		key, value, ok := strings.Cut(line, "=")
 		if !ok {
-			t.Fatalf("unexpected systemctl output line %q", line)
+			return nil, fmt.Errorf("unexpected systemctl output line %q", line)
 		}
 		result[key] = value
 	}
 
 	for _, property := range properties {
 		if _, ok := result[property]; !ok {
-			t.Fatalf("systemctl output missing property %q", property)
+			return nil, fmt.Errorf("systemctl output missing property %q", property)
 		}
 	}
 
-	return result
+	if result["LoadState"] == "not-found" {
+		return nil, errors.New("unit not found")
+	}
+
+	return result, nil
 }
 
 func integrationReadProcStatus(t *testing.T, pid int) integrationProcStatus {

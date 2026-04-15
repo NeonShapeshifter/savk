@@ -195,6 +195,64 @@ func TestBuildSocketChecksUsesRootedAccountDatabase(t *testing.T) {
 	}
 }
 
+func TestBuildSocketChecksReturnInsufficientDataWhenRootedOwnershipIsAmbiguous(t *testing.T) {
+	t.Parallel()
+
+	hostRoot := t.TempDir()
+	writeTestAccountFiles(t, hostRoot,
+		[]string{
+			"alpha:x:1234:1234::/nonexistent:/usr/sbin/nologin",
+			"beta:x:1234:1234::/nonexistent:/usr/sbin/nologin",
+		},
+		[]string{
+			"alpha:x:1234:",
+			"beta:x:1234:",
+		},
+	)
+
+	target := "/run/sensor-agent.sock"
+	resolved := filepath.Join(hostRoot, "run", "sensor-agent.sock")
+	checks := BuildSocketChecks(map[string]contract.SocketSpec{
+		target: {
+			Owner: "alpha",
+			Group: "alpha",
+		},
+	}, NewRootedPathChecker(hostRoot, fakePathChecker{
+		entries: map[string]fakeFileInfo{
+			resolved: {
+				mode: os.ModeSocket | 0o660,
+				sys:  &syscall.Stat_t{Uid: 1234, Gid: 1234},
+			},
+		},
+	}))
+
+	results, err := engine.New().Run(context.Background(), checks)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	byID := make(map[string]evidence.CheckResult, len(results))
+	for _, result := range results {
+		byID[result.CheckID] = result
+	}
+
+	owner := byID["socket."+target+".owner"]
+	if owner.Status != evidence.StatusInsufficientData {
+		t.Fatalf("owner.Status = %s, want %s", owner.Status, evidence.StatusInsufficientData)
+	}
+	if owner.ReasonCode != evidence.ReasonParseError {
+		t.Fatalf("owner.ReasonCode = %s, want %s", owner.ReasonCode, evidence.ReasonParseError)
+	}
+
+	group := byID["socket."+target+".group"]
+	if group.Status != evidence.StatusInsufficientData {
+		t.Fatalf("group.Status = %s, want %s", group.Status, evidence.StatusInsufficientData)
+	}
+	if group.ReasonCode != evidence.ReasonParseError {
+		t.Fatalf("group.ReasonCode = %s, want %s", group.ReasonCode, evidence.ReasonParseError)
+	}
+}
+
 type fakePathChecker struct {
 	entries map[string]fakeFileInfo
 	errs    map[string]error

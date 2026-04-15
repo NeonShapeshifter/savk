@@ -201,6 +201,10 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 }
 
 func buildChecksForDomains(cfg *contract.Contract, domains []string, hostRoot string) ([]engine.Check, error) {
+	if err := contract.ValidateSemantics(cfg); err != nil {
+		return nil, err
+	}
+
 	checks := make([]engine.Check, 0)
 	pathChecker := newPathChecker()
 	if hostRoot != "" {
@@ -269,11 +273,8 @@ func buildServiceBackedChecks(cfg *contract.Contract, includeServices, includeId
 	}
 
 	synthesizedStates := make(map[string]contract.ServiceSpec)
-	for label, spec := range cfg.Identity {
+	for _, spec := range cfg.Identity {
 		if declared, ok := cfg.Services[spec.Service]; ok {
-			if declared.State != contract.ServiceStateActive {
-				return nil, nil, fmt.Errorf("identity.%s.service references %s but services.%s.state is %s; runtime identity requires active", label, spec.Service, spec.Service, declared.State)
-			}
 			if !includeServices {
 				synthesizedStates[spec.Service] = contract.ServiceSpec{State: declared.State}
 			}

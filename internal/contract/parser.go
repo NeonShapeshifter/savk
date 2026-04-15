@@ -74,7 +74,15 @@ func ParseBytes(data []byte) (*Contract, error) {
 		return nil, fmt.Errorf("root document must be a mapping")
 	}
 
-	return decodeContract(root)
+	contract, err := decodeContract(root)
+	if err != nil {
+		return nil, err
+	}
+	if err := ValidateSemantics(contract); err != nil {
+		return nil, err
+	}
+
+	return contract, nil
 }
 
 func tokenize(data []byte) ([]sourceLine, error) {

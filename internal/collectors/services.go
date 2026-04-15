@@ -199,9 +199,9 @@ func (c serviceCheck) Run(ctx context.Context) evidence.CheckResult {
 				Message: fmt.Sprintf("expected service %s to exist", c.name),
 			}
 		case errors.Is(err, errNamespaceIsolation):
-			return serviceError(evidence.ReasonNamespaceIsolation, fmt.Sprintf("systemd is not reachable for service %s", c.name), command, unit.exitCodePtr(), unit.raw)
+			return serviceError(evidence.ReasonNamespaceIsolation, fmt.Sprintf("service-backed checks are observer-local in v0.1.x; observer-local systemd is not reachable for service %s", c.name), command, unit.exitCodePtr(), unit.raw)
 		case errors.Is(err, errPermissionDenied):
-			return serviceError(evidence.ReasonPermissionDenied, fmt.Sprintf("permission denied while reading service %s", c.name), command, unit.exitCodePtr(), unit.raw)
+			return serviceError(evidence.ReasonPermissionDenied, fmt.Sprintf("permission denied while reading observer-local service %s", c.name), command, unit.exitCodePtr(), unit.raw)
 		case errors.Is(err, errCommandUnavailable), errors.Is(err, errUnexpectedCommand):
 			return serviceError(evidence.ReasonParseError, fmt.Sprintf("systemctl executable is not available or not allowlisted for service %s", c.name), nil, nil, unit.raw)
 		case errors.Is(err, errServiceParse):

@@ -71,6 +71,8 @@ Fields recomendadas:
 - `contractHash` DEBE ser el SHA-256 de los bytes exactos consumidos por el parser
 - `runID` DEBE tratarse como string opaco
 - `host` identifica al observador que ejecutó SAVK
+- en `v0.1.x`, los resultados `services` e `identity` son observer-locales con
+  respecto a ese `host`
 - `hostRoot`, si existe, DEBE reflejar el root filesystem remapeado usado para
   `paths` y `sockets`
 - `startedAt` DEBE serializarse en UTC

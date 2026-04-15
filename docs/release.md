@@ -30,7 +30,7 @@ Prerequisitos:
 Alcance honesto de esa integración:
 
 - cubre namespace preflight
-- cubre toda la superficie pública service-backed del release
+- cubre una ruta service-backed observer-local real del release
 - sigue siendo una ruta mínima sobre un host real, no una matrix por distro
 
 Build local:
@@ -49,6 +49,8 @@ Tradeoff explícito:
   `/etc/group` visibles para SAVK o para `--host-root`, no de libc/NSS
 - si esos archivos no ofrecen evidencia suficiente para resolver nombres,
   SAVK degrada a `INSUFFICIENT_DATA`
+- `services` e `identity` son observer-local only en `v0.1.x`; SAVK no intenta
+  remapear ni demostrar un target service-backed distinto del observador
 
 Artifact de release para la plataforma actual:
 

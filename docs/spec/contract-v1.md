@@ -154,6 +154,8 @@ Reglas:
 - en `v0.1`, `services.<name>.capabilities` compara contra la propiedad
   `AmbientCapabilities` observada vía `systemctl show`
 - `run_as.user` y `run_as.group`, si existen, se comparan por nombre
+- `services` en `v0.1` es observer-local: `systemctl`, `/etc/passwd` y
+  `/etc/group` se interpretan sobre el mismo observador que ejecuta SAVK
 - si `systemctl` expone IDs numéricos o deja `Group=` vacío, SAVK solo puede
   normalizar esos valores usando `/etc/passwd` y `/etc/group` locales
 - si esa evidencia no alcanza, el resultado DEBE degradar a
@@ -255,6 +257,8 @@ Reglas:
 - la observación runtime de `identity` en `v0.1` se resuelve como:
   `systemctl show <unit> --property=MainPID --property=ControlGroup`
   + lectura de `/proc/<pid>/status` y `/proc/<pid>/cgroup`
+- `identity` en `v0.1` es observer-local; SAVK no soporta remapear ni probar un
+  target runtime distinto del observador
 - los checks de `identity` dependen de `service.<unit>.state`
 - si `identity.<label>.service` referencia una entrada declarada en `services`,
   `services.<unit>.state` DEBE ser `active`
@@ -262,6 +266,9 @@ Reglas:
   PUEDE sintetizar el prerequisito `service.<unit>.state`
 - si `MainPID` ya no puede probarse contra el `ControlGroup` observado,
   SAVK DEBE degradar el resultado a `INSUFFICIENT_DATA`
+- si el contexto observer-local no permite probar la ruta service-backed, SAVK
+  DEBE fallar cerrada con `ERROR/NAMESPACE_ISOLATION` o degradar a
+  `INSUFFICIENT_DATA`
 
 ## Scalars and value rules
 
@@ -296,7 +303,8 @@ Rutas en `paths` y `sockets`:
   `paths` y `sockets`
 - bajo `--host-root`, la resolución por nombre de `owner` y `group` también
   DEBE salir de `<host-root>/etc/passwd` y `<host-root>/etc/group`
-- `--host-root` NO aplica a `services` ni `identity` en `v0.1`
+- `--host-root` NO aplica a `services` ni `identity` en `v0.1`; esos dominios
+  siguen siendo observer-local only
 
 ### Strings
 
