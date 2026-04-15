@@ -1,5 +1,5 @@
 GO ?= go
-VERSION ?= 0.1.0
+VERSION ?= 0.1.3
 COMMIT ?= unknown
 BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 GOOS ?= $(shell $(GO) env GOOS)

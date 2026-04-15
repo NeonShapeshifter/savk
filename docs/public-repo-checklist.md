@@ -1,12 +1,12 @@
 # Public Repo Checklist
 
-SAVK puede hacerse público cuando el repositorio no sobrepromete más de lo
-que hoy está verificado.
+SAVK can be made public when the repository does not overclaim beyond what is
+actually verified today.
 
-## Ya resuelto
+## Already Done
 
-- README y docs base
-- specs del contrato y del reporte
+- README and base docs
+- contract and report specs
 - examples/
 - changelog
 - release notes
@@ -16,11 +16,11 @@ que hoy está verificado.
 - `SECURITY.md`
 - `LICENSE`
 
-## Revisión final antes de abrirlo
+## Final Review Before Opening It
 
-1. confirmar que `README` no haga claims más fuertes que los tests
-2. revisar que no quieras publicar `bin/` ni `dist/` en el repo
-3. confirmar que no hay secretos ni datos locales en la historia
-4. correr `GOCACHE=/tmp/savk-go-build make test GO=/usr/local/go/bin/go`
-5. correr la ruta real de [docs/integration.md](integration.md) en un host `linux-systemd`
-6. si vas a publicar artefactos, adjuntarlos en el release y no como contenido del repo
+1. confirm that `README` does not make stronger claims than the tests
+2. verify that you do not want to publish `bin/` or `dist/` in the repo
+3. confirm that there are no secrets or local data in history
+4. run `GOCACHE=/tmp/savk-go-build make test GO=/usr/local/go/bin/go`
+5. run the real path from [docs/integration.md](integration.md) on a `linux-systemd` host
+6. if you publish artifacts, attach them to the release rather than committing them into the repo

@@ -4,279 +4,278 @@ Status: normative for `apiVersion: savk/v1`
 
 ## Scope
 
-Este documento define el contrato de entrada que consume `savk check`
-y `savk validate` en `v0.1`.
+This document defines the input contract consumed by `savk check` and
+`savk validate` in `v0.1`.
 
-Objetivos:
+Objectives:
 
-- fijar el subset YAML soportado por el parser zero-deps
-- fijar el schema del contrato
-- fijar validaciones, errores y límites del formato
-- fijar el target soportado en `v0.1`
+- define the YAML subset supported by the zero-dependency parser
+- define the contract schema
+- define validations, errors, and format limits
+- define the supported target in `v0.1`
 
-No define:
+It does not define:
 
-- el formato del reporte JSON
-- detalles internos del engine
-- remediación o generación automática de contratos
+- the JSON report format
+- internal engine details
+- remediation or automatic contract generation
 
 ## Versioning
 
-- `apiVersion` versiona el contrato de entrada
-- este documento aplica solo a `apiVersion: savk/v1`
-- cambios incompatibles en el contrato requieren una nueva `apiVersion`
-- `schemaVersion` pertenece al reporte JSON y se define aparte
+- `apiVersion` versions the input contract
+- this document applies only to `apiVersion: savk/v1`
+- incompatible contract changes require a new `apiVersion`
+- `schemaVersion` belongs to the JSON report and is defined separately
 
 ## Supported target
 
-`savk/v1` soporta un único target en producción:
+`savk/v1` supports a single production target:
 
 ```text
 linux-systemd
 ```
 
-Reglas:
+Rules:
 
-- `metadata.target` DEBE ser `linux-systemd`
-- un target desconocido o no soportado es `USER_ERROR`
-- `NOT_APPLICABLE` no reemplaza un target inválido; solo aplica a checks
-  válidos dentro de un target soportado
+- `metadata.target` MUST be `linux-systemd`
+- an unknown or unsupported target is a `USER_ERROR`
+- `NOT_APPLICABLE` does not replace an invalid target; it applies only to valid
+  checks within a supported target
 
 ## Input format
 
-El contrato DEBE ser un archivo de texto UTF-8.
+The contract MUST be a UTF-8 text file.
 
 ### YAML subset
 
-`savk/v1` no soporta YAML completo. El parser solo DEBE aceptar:
+`savk/v1` does not support full YAML. The parser MUST accept only:
 
-- un único documento YAML
-- mappings por indentación
-- listas simples con `-`
-- el literal inline `[]` solo para listas vacías
-- strings planas o quoted
-- integers base 10
-- booleans `true` y `false`
+- a single YAML document
+- indentation-based mappings
+- simple lists with `-`
+- the inline literal `[]` only for empty lists
+- plain or quoted strings
+- base-10 integers
+- booleans `true` and `false`
 
-Restricciones:
+Restrictions:
 
-- indentación solo con espacios
-- tabs son inválidos
-- comentarios de línea completa son válidos
-- comentarios inline no son requeridos por la spec
-- keys duplicadas son inválidas
-- fields desconocidas son inválidas
+- indentation with spaces only
+- tabs are invalid
+- full-line comments are valid
+- inline comments are not required by the spec
+- duplicate keys are invalid
+- unknown fields are invalid
 
-No soportado:
+Unsupported:
 
 - anchors
 - aliases
 - merge keys
 - tags
-- flow style general (`{}` o `[a, b]`)
+- general flow style (`{}` or `[a, b]`)
 - multiline strings
-- múltiples documentos
-- tipos implícitos fuera de `string`, `int`, `bool`
+- multiple documents
+- implicit types outside `string`, `int`, and `bool`
 
-Una feature fuera de este subset DEBE fallar con error explícito.
+Any feature outside this subset MUST fail with an explicit error.
 
 ## Root schema
 
-El documento raíz DEBE ser un mapping con estas fields:
+The root document MUST be a mapping with these fields:
 
 | Field | Type | Required | Notes |
 |---|---|---:|---|
-| `apiVersion` | string | yes | exacto `savk/v1` |
-| `kind` | string | yes | exacto `ApplianceContract` |
-| `metadata` | mapping | yes | metadatos del contrato |
-| `services` | mapping | no | dominio `services` |
-| `sockets` | mapping | no | dominio `sockets` |
-| `paths` | mapping | no | dominio `paths` |
-| `identity` | mapping | no | dominio `identity` |
+| `apiVersion` | string | yes | exact `savk/v1` |
+| `kind` | string | yes | exact `ApplianceContract` |
+| `metadata` | mapping | yes | contract metadata |
+| `services` | mapping | no | `services` domain |
+| `sockets` | mapping | no | `sockets` domain |
+| `paths` | mapping | no | `paths` domain |
+| `identity` | mapping | no | `identity` domain |
 
-Reglas:
+Rules:
 
-- `kind` DEBE ser `ApplianceContract`
-- al menos uno de `services`, `sockets`, `paths` o `identity` DEBE estar
-  presente y no vacío
-- el orden de las fields no importa
-- una field desconocida en cualquier nivel es error de validación
+- `kind` MUST be `ApplianceContract`
+- at least one of `services`, `sockets`, `paths`, or `identity` MUST be
+  present and non-empty
+- field order does not matter
+- an unknown field at any level is a validation error
 
 ## Metadata
 
-`metadata` DEBE ser un mapping con estas fields:
+`metadata` MUST be a mapping with these fields:
 
 | Field | Type | Required | Notes |
 |---|---|---:|---|
-| `name` | string | yes | identificador humano del contrato |
-| `target` | string | yes | exacto `linux-systemd` en `v0.1` |
+| `name` | string | yes | human contract identifier |
+| `target` | string | yes | exact `linux-systemd` in `v0.1` |
 
-Reglas:
+Rules:
 
-- `metadata.name` DEBE ser un string no vacío
-- `metadata.target` DEBE coincidir con la support matrix
+- `metadata.name` MUST be a non-empty string
+- `metadata.target` MUST match the support matrix
 
 ## Domain schemas
 
-Las domains pueden omitirse. Una domain omitida no genera checks.
+Domains may be omitted. An omitted domain produces no checks.
 
 ### Services
 
-`services` DEBE ser un mapping `service_name -> ServiceSpec`.
+`services` MUST be a mapping `service_name -> ServiceSpec`.
 
-El nombre del servicio identifica la unidad observada. En `v0.1`,
-usar el nombre explícito de la unidad es lo más seguro; usar el unit
-name completo es RECOMMENDED.
+The service name identifies the observed unit. In `v0.1`, using the explicit
+unit name is safest; using the full unit name is RECOMMENDED.
 
 `ServiceSpec`:
 
 | Field | Type | Required | Notes |
 |---|---|---:|---|
 | `state` | string | yes | `active`, `inactive`, `failed` |
-| `run_as` | mapping | no | identidad esperada del proceso |
+| `run_as` | mapping | no | expected process identity |
 | `restart` | string | no | `always`, `on-failure`, `no` |
-| `capabilities` | list[string] | no | `AmbientCapabilities` esperadas |
+| `capabilities` | list[string] | no | expected `AmbientCapabilities` |
 
 `run_as`:
 
 | Field | Type | Required | Notes |
 |---|---|---:|---|
-| `user` | string | yes | nombre de usuario esperado, no UID |
-| `group` | string | no | nombre de grupo esperado, no GID |
+| `user` | string | yes | expected user name, not UID |
+| `group` | string | no | expected group name, not GID |
 
-Reglas:
+Rules:
 
-- `state` DEBE ser uno de `active`, `inactive`, `failed`
-- `restart` DEBE ser uno de `always`, `on-failure`, `no`
-- `capabilities` DEBE ser una lista de strings no vacíos
-- los nombres de capability DEBEN usar la forma canónica Linux
-  como `CAP_NET_BIND_SERVICE`
-- en `v0.1`, `services.<name>.capabilities` compara contra la propiedad
-  `AmbientCapabilities` observada vía `systemctl show`
-- `run_as.user` y `run_as.group`, si existen, se comparan por nombre
-- `services` en `v0.1` es observer-local: `systemctl`, `/etc/passwd` y
-  `/etc/group` se interpretan sobre el mismo observador que ejecuta SAVK
-- si `systemctl` expone IDs numéricos o deja `Group=` vacío, SAVK solo puede
-  normalizar esos valores usando `/etc/passwd` y `/etc/group` locales
-- si esa evidencia no alcanza, el resultado DEBE degradar a
+- `state` MUST be one of `active`, `inactive`, `failed`
+- `restart` MUST be one of `always`, `on-failure`, `no`
+- `capabilities` MUST be a list of non-empty strings
+- capability names MUST use the canonical Linux form such as
+  `CAP_NET_BIND_SERVICE`
+- in `v0.1`, `services.<name>.capabilities` compares against the
+  `AmbientCapabilities` property observed through `systemctl show`
+- `run_as.user` and `run_as.group`, when present, compare by name
+- `services` in `v0.1` is observer-local: `systemctl`, `/etc/passwd`, and
+  `/etc/group` are interpreted on the same observer that runs SAVK
+- if `systemctl` exposes numeric IDs or leaves `Group=` empty, SAVK can only
+  normalize those values using local `/etc/passwd` and `/etc/group`
+- if that evidence is insufficient, the result MUST degrade to
   `INSUFFICIENT_DATA`
 
 ### Sockets
 
-`sockets` DEBE ser un mapping `absolute_path -> SocketSpec`.
+`sockets` MUST be a mapping `absolute_path -> SocketSpec`.
 
-La presencia de una entrada en `sockets` implica que el socket DEBE existir.
+The presence of an entry in `sockets` implies that the socket MUST exist.
 
 `SocketSpec`:
 
 | Field | Type | Required | Notes |
 |---|---|---:|---|
-| `owner` | string | no | nombre de owner esperado, no UID |
-| `group` | string | no | nombre de group esperado, no GID |
-| `mode` | string | no | octal quoted |
+| `owner` | string | no | expected owner name, not UID |
+| `group` | string | no | expected group name, not GID |
+| `mode` | string | no | quoted octal |
 
-Reglas:
+Rules:
 
-- la key del mapping DEBE ser una ruta absoluta
-- `mode`, si existe, DEBE usar notación octal quoted
-- un `SocketSpec` vacío es válido y significa “solo verificar existencia”
-- `owner` y `group`, si existen, se comparan por nombre
-- `sockets` observa el nodo con `lstat`; no sigue symlinks
-- la resolución de `owner` y `group` DEBE salir de `/etc/passwd` y `/etc/group`
-  visibles para SAVK o para `--host-root`
-- si no existe un mapping confiable para un UID/GID observado, SAVK DEBE
-  degradar a `INSUFFICIENT_DATA`
+- the mapping key MUST be an absolute path
+- `mode`, when present, MUST use quoted octal notation
+- an empty `SocketSpec` is valid and means "only verify existence"
+- `owner` and `group`, when present, compare by name
+- `sockets` observes the node with `lstat`; it does not follow symlinks
+- `owner` and `group` resolution MUST come from `/etc/passwd` and `/etc/group`
+  visible to SAVK or to `--host-root`
+- if no trustworthy mapping exists for an observed UID or GID, SAVK MUST
+  degrade to `INSUFFICIENT_DATA`
 
 ### Paths
 
-`paths` DEBE ser un mapping `absolute_path -> PathSpec`.
+`paths` MUST be a mapping `absolute_path -> PathSpec`.
 
-La presencia de una entrada en `paths` implica que la ruta DEBE existir.
+The presence of an entry in `paths` implies that the path MUST exist.
 
 `PathSpec`:
 
 | Field | Type | Required | Notes |
 |---|---|---:|---|
-| `owner` | string | no | nombre de owner esperado, no UID |
-| `group` | string | no | nombre de group esperado, no GID |
-| `mode` | string | no | octal quoted |
+| `owner` | string | no | expected owner name, not UID |
+| `group` | string | no | expected group name, not GID |
+| `mode` | string | no | quoted octal |
 | `type` | string | no | `file`, `directory` |
 
-Reglas:
+Rules:
 
-- la key del mapping DEBE ser una ruta absoluta
-- `type`, si existe, DEBE ser `file` o `directory`
-- `mode`, si existe, DEBE cumplir `^0[0-7]{3,4}$`
-- un `PathSpec` vacío es válido y significa “solo verificar existencia”
-- `owner` y `group`, si existen, se comparan por nombre
-- `paths` observa el nodo con `lstat`; no sigue symlinks
-- la resolución de `owner` y `group` DEBE salir de `/etc/passwd` y `/etc/group`
-  visibles para SAVK o para `--host-root`
-- si no existe un mapping confiable para un UID/GID observado, SAVK DEBE
-  degradar a `INSUFFICIENT_DATA`
+- the mapping key MUST be an absolute path
+- `type`, when present, MUST be `file` or `directory`
+- `mode`, when present, MUST match `^0[0-7]{3,4}$`
+- an empty `PathSpec` is valid and means "only verify existence"
+- `owner` and `group`, when present, compare by name
+- `paths` observes the node with `lstat`; it does not follow symlinks
+- `owner` and `group` resolution MUST come from `/etc/passwd` and `/etc/group`
+  visible to SAVK or to `--host-root`
+- if no trustworthy mapping exists for an observed UID or GID, SAVK MUST
+  degrade to `INSUFFICIENT_DATA`
 
 ### Identity
 
-`identity` DEBE ser un mapping `label -> RuntimeIdentitySpec`.
+`identity` MUST be a mapping `label -> RuntimeIdentitySpec`.
 
-La key es un label lógico del sujeto runtime observado. No representa
-necesariamente un usuario local del host.
+The key is a logical label for the observed runtime subject. It does not
+necessarily represent a local user on the host.
 
-En `v0.1`, `identity` modela la identidad efectiva de un proceso en ejecución.
-El único selector soportado en `v0.1` es un servicio systemd.
+In `v0.1`, `identity` models the effective identity of a running process.
+The only selector supported in `v0.1` is a systemd service.
 
 `RuntimeIdentitySpec`:
 
 | Field | Type | Required | Notes |
 |---|---|---:|---|
-| `service` | string | yes | unidad systemd usada para resolver el sujeto runtime |
-| `uid` | int | no | UID efectiva del proceso observado |
-| `gid` | int | no | GID efectiva del proceso observado |
-| `capabilities` | mapping | no | expectations por capability set |
+| `service` | string | yes | systemd unit used to resolve the runtime subject |
+| `uid` | int | no | effective UID of the observed process |
+| `gid` | int | no | effective GID of the observed process |
+| `capabilities` | mapping | no | expectations by capability set |
 
 `capabilities`:
 
 | Field | Type | Required | Notes |
 |---|---|---:|---|
-| `effective` | list[string] | no | compara contra `CapEff` |
-| `permitted` | list[string] | no | compara contra `CapPrm` |
-| `inheritable` | list[string] | no | compara contra `CapInh` |
-| `bounding` | list[string] | no | compara contra `CapBnd` |
-| `ambient` | list[string] | no | compara contra `CapAmb` |
+| `effective` | list[string] | no | compares against `CapEff` |
+| `permitted` | list[string] | no | compares against `CapPrm` |
+| `inheritable` | list[string] | no | compares against `CapInh` |
+| `bounding` | list[string] | no | compares against `CapBnd` |
+| `ambient` | list[string] | no | compares against `CapAmb` |
 
-Reglas:
+Rules:
 
-- `service` DEBE ser un string no vacío
-- en `v0.1`, `service` es obligatorio en cada `RuntimeIdentitySpec`
-- al menos una de `uid`, `gid` o `capabilities` DEBE existir
-- `uid` y `gid` DEBEN ser enteros no negativos
-- `capabilities`, si existe, DEBE ser un mapping no vacío
-- cada capability set soportado DEBE ser una lista de strings no vacíos
-- los nombres de capability DEBEN usar la forma canónica Linux
-  como `CAP_NET_BIND_SERVICE`
-- la observación runtime de `identity` en `v0.1` se resuelve como:
+- `service` MUST be a non-empty string
+- in `v0.1`, `service` is mandatory in every `RuntimeIdentitySpec`
+- at least one of `uid`, `gid`, or `capabilities` MUST exist
+- `uid` and `gid` MUST be non-negative integers
+- `capabilities`, when present, MUST be a non-empty mapping
+- each supported capability set MUST be a list of non-empty strings
+- capability names MUST use the canonical Linux form such as
+  `CAP_NET_BIND_SERVICE`
+- runtime observation of `identity` in `v0.1` resolves as:
   `systemctl show <unit> --property=MainPID --property=ControlGroup`
-  + lectura de `/proc/<pid>/status` y `/proc/<pid>/cgroup`
-- `identity` en `v0.1` es observer-local; SAVK no soporta remapear ni probar un
-  target runtime distinto del observador
-- los checks de `identity` dependen de `service.<unit>.state`
-- si `identity.<label>.service` referencia una entrada declarada en `services`,
-  `services.<unit>.state` DEBE ser `active`
-- si la unidad referenciada no está declarada en `services`, `savk check`
-  PUEDE sintetizar el prerequisito `service.<unit>.state`
-- si `MainPID` ya no puede probarse contra el `ControlGroup` observado,
-  SAVK DEBE degradar el resultado a `INSUFFICIENT_DATA`
-- si el contexto observer-local no permite probar la ruta service-backed, SAVK
-  DEBE fallar cerrada con `ERROR/NAMESPACE_ISOLATION` o degradar a
+  + reads of `/proc/<pid>/status` and `/proc/<pid>/cgroup`
+- `identity` in `v0.1` is observer-local; SAVK does not support remapping or
+  proving a runtime target distinct from the observer
+- `identity` checks depend on `service.<unit>.state`
+- if `identity.<label>.service` references a declared entry in `services`,
+  `services.<unit>.state` MUST be `active`
+- if the referenced unit is not declared in `services`, `savk check` MAY
+  synthesize the prerequisite `service.<unit>.state`
+- if `MainPID` can no longer be proven against the observed `ControlGroup`,
+  SAVK MUST degrade the result to `INSUFFICIENT_DATA`
+- if the observer-local context cannot prove the service-backed path, SAVK MUST
+  fail closed with `ERROR/NAMESPACE_ISOLATION` or degrade to
   `INSUFFICIENT_DATA`
 
 ## Scalars and value rules
 
 ### Modes
 
-`mode` se representa como string quoted en octal.
+`mode` is represented as a quoted octal string.
 
-Ejemplos válidos:
+Valid examples:
 
 ```yaml
 mode: "0640"
@@ -284,7 +283,7 @@ mode: "0750"
 mode: "04755"
 ```
 
-Ejemplos inválidos:
+Invalid examples:
 
 ```yaml
 mode: 640
@@ -294,40 +293,40 @@ mode: "0x1ff"
 
 ### Paths
 
-Rutas en `paths` y `sockets`:
+Paths in `paths` and `sockets`:
 
-- DEBEN ser absolutas
-- NO DEBEN estar vacías
-- DEBEN referirse al filesystem visto por SAVK o por `--host-root`
-- `--host-root`, si se usa, remapea rutas absolutas bajo ese root solo para
-  `paths` y `sockets`
-- bajo `--host-root`, la resolución por nombre de `owner` y `group` también
-  DEBE salir de `<host-root>/etc/passwd` y `<host-root>/etc/group`
-- `--host-root` NO aplica a `services` ni `identity` en `v0.1`; esos dominios
-  siguen siendo observer-local only
+- MUST be absolute
+- MUST NOT be empty
+- MUST refer to the filesystem seen by SAVK or by `--host-root`
+- `--host-root`, when used, remaps absolute paths under that root only for
+  `paths` and `sockets`
+- under `--host-root`, name-based `owner` and `group` resolution MUST also come
+  from `<host-root>/etc/passwd` and `<host-root>/etc/group`
+- `--host-root` DOES NOT apply to `services` or `identity` in `v0.1`; those
+  domains remain observer-local only
 
 ### Strings
 
-Strings estructurales como `metadata.name`, users, groups, service names
-y capability names DEBEN ser no vacíos.
+Structural strings such as `metadata.name`, users, groups, service names, and
+capability names MUST be non-empty.
 
 ## Defaults
 
-`savk/v1` evita defaults implícitos siempre que sea posible.
+`savk/v1` avoids implicit defaults whenever possible.
 
-Reglas:
+Rules:
 
-- omitir una field opcional significa “no afirmar esa propiedad”
-- la presencia de una key en `paths` o `sockets` siempre afirma existencia
-- una domain omitida no genera checks
-- una domain presente pero vacía no genera checks y SHOULD tratarse como
-  contrato sospechoso
+- omitting an optional field means "do not assert that property"
+- the presence of a key in `paths` or `sockets` always asserts existence
+- an omitted domain generates no checks
+- a present but empty domain generates no checks and SHOULD be treated as a
+  suspicious contract
 
 ## Check ID convention
 
-Los checks derivados del contrato DEBEN tener IDs predecibles.
+Checks derived from the contract MUST have predictable IDs.
 
-Convención inicial:
+Initial convention:
 
 ```text
 service.<name>.state
@@ -350,18 +349,18 @@ identity.<label>.capabilities.bounding
 identity.<label>.capabilities.ambient
 ```
 
-Notas:
+Notes:
 
-- los IDs son estables y deterministas
-- los consumers externos DEBEN tratarlos como strings opacos
-- el orden de serialización de resultados depende del `CheckID`
-- SAVK también puede emitir IDs reservados de preflight:
+- IDs are stable and deterministic
+- external consumers MUST treat them as opaque strings
+- result serialization order depends on `CheckID`
+- SAVK may also emit reserved preflight IDs:
   `path.__preflight__.namespace`, `socket.__preflight__.namespace`,
   `service.__preflight__.namespace`
 
 ## Validation model
 
-La validación ocurre en tres capas:
+Validation happens in three layers:
 
 1. Syntax
 2. Structure
@@ -369,9 +368,9 @@ La validación ocurre en tres capas:
 
 ### Syntax errors
 
-Errores del subset YAML:
+YAML subset errors:
 
-- indentación inválida
+- invalid indentation
 - tabs
 - flow style
 - multiline strings
@@ -379,31 +378,31 @@ Errores del subset YAML:
 
 ### Structure errors
 
-Errores del schema:
+Schema errors:
 
-- field desconocida
-- tipo inválido
-- `kind` inválido
-- `apiVersion` inválida
-- `metadata` incompleto
+- unknown field
+- invalid type
+- invalid `kind`
+- invalid `apiVersion`
+- incomplete `metadata`
 
 ### Semantic errors
 
-Errores del contenido:
+Content errors:
 
-- target no soportado
-- ruta relativa
-- enum inválido
-- contract vacío
-- ciclo en el grafo de prerequisitos derivado del contrato
+- unsupported target
+- relative path
+- invalid enum
+- empty contract
+- cycle in the prerequisite graph derived from the contract
 
-Los errores de contrato DEBEN abortar antes del engine y salir con exit code `3`.
+Contract errors MUST abort before the engine and exit with code `3`.
 
 ## Error message guidance
 
-Los errores de parseo y validación DEBEN ser accionables.
+Parse and validation errors MUST be actionable.
 
-Ejemplos:
+Examples:
 
 ```text
 unknown field "onwer" at paths./etc/myapp/config.yaml

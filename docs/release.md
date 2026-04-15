@@ -2,81 +2,81 @@
 
 ## Packaging stance
 
-SAVK no usa `npm` ni `pnpm`.
+SAVK does not use `npm` or `pnpm`.
 
-Razones:
+Why:
 
-- el runtime es un binario Go
-- no hay frontend ni ecosistema Node que justificaría ese empaquetado
-- meter `npm` o `pnpm` solo agrega otra toolchain y otra superficie de soporte
+- the runtime is a Go binary
+- there is no frontend or Node ecosystem that would justify that packaging
+- adding `npm` or `pnpm` would only add another toolchain and support surface
 
-La forma recomendada de distribuir `v0.1` es:
+The recommended way to distribute `v0.1` is:
 
-- binario compilado
-- tarball `tar.gz` por plataforma
+- a compiled binary
+- a per-platform `tar.gz` tarball
 
-Empaquetado nativo tipo `.deb` o `.rpm` puede venir después si hace falta,
-pero no es requisito para `v0.1`.
+Native packaging such as `.deb` or `.rpm` can come later if needed, but it is
+not required for `v0.1`.
 
 ## Release flow
 
-Prerequisitos:
+Prerequisites:
 
-- `go` disponible en `PATH`
-- suite verde con `make test`
-- correr también la ruta de [integration.md](integration.md) con
+- `go` available in `PATH`
+- green test suite with `make test`
+- also run the path in [integration.md](integration.md) with
   `SAVK_RUN_SYSTEMD_INTEGRATION=1`
 
-Alcance honesto de esa integración:
+Honest scope of that integration:
 
-- cubre namespace preflight
-- cubre una ruta service-backed observer-local real del release
-- sigue siendo una ruta mínima sobre un host real, no una matrix por distro
+- it covers namespace preflight
+- it covers one real observer-local service-backed release path
+- it is still a minimum path on a real host, not a distro matrix
 
-Build local:
+Local build:
 
 ```bash
 make build
 ./bin/savk version
 ```
 
-`make build` y `make dist` fuerzan `CGO_ENABLED=0`, así que el binario
-oficial de SAVK sale alineado con la postura de single-binary release.
+`make build` and `make dist` force `CGO_ENABLED=0`, so the official SAVK
+binary stays aligned with the single-binary release stance.
 
-Tradeoff explícito:
+Explicit tradeoff:
 
-- los checks por nombre de `owner`/`group` dependen de `/etc/passwd` y
-  `/etc/group` visibles para SAVK o para `--host-root`, no de libc/NSS
-- si esos archivos no ofrecen evidencia suficiente para resolver nombres,
-  SAVK degrada a `INSUFFICIENT_DATA`
-- `services` e `identity` son observer-local only en `v0.1.x`; SAVK no intenta
-  remapear ni demostrar un target service-backed distinto del observador
+- name-based `owner` and `group` checks depend on `/etc/passwd` and
+  `/etc/group` visible to SAVK or to `--host-root`, not on libc/NSS
+- if those files do not provide sufficient evidence to resolve names, SAVK
+  degrades to `INSUFFICIENT_DATA`
+- `services` and `identity` are observer-local only in `v0.1.x`; SAVK does not
+  try to remap or prove a service-backed target distinct from the observer
 
-Artifact de release para la plataforma actual:
+Release artifact for the current platform:
 
 ```bash
-make dist VERSION=0.1.0 COMMIT=abc1234
+make dist VERSION=0.1.3 COMMIT=abc1234
 ```
 
-Eso produce:
+That produces:
 
 - `dist/savk-<version>-<goos>-<goarch>`
 - `dist/savk-<version>-<goos>-<goarch>.tar.gz`
 - `dist/SHA256SUMS`
 
-Checklist operativa:
+Operational checklist:
 
 - [Release checklist](release-checklist.md)
 
-## Metadata de build
+## Build metadata
 
-`savk version` expone:
+`savk version` exposes:
 
-- versión
+- version
 - commit
-- fecha de build
-- plataforma
+- build date
+- platform
 - `contractVersion`
 - `reportSchema`
 
-Las tres primeras se inyectan por `ldflags` desde el `Makefile`.
+The first three are injected via `ldflags` from the `Makefile`.

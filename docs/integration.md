@@ -1,11 +1,11 @@
 # SAVK Integration Path
 
-Esta ruta existe para validar los dominios service-backed en un host
-`linux-systemd` real sin cortar features del repo público.
+This path exists to validate the service-backed domains on a real
+`linux-systemd` host without trimming features from the public repo.
 
-## Qué cubre hoy
+## What It Covers Today
 
-- preflight de namespace
+- namespace preflight
 - `services.state`
 - `services.restart`
 - `services.run_as.user`
@@ -13,30 +13,29 @@ Esta ruta existe para validar los dominios service-backed en un host
 - `services.capabilities`
 - `identity.uid`
 - `identity.gid`
-- los capability sets de `identity`
-- assertions reales sobre checks `PASS` en una ruta observer-local, no solo
-  presencia de dominios
+- the capability sets of `identity`
+- real assertions over `PASS` checks on an observer-local path, not just domain
+  presence
 
-Límite honesto:
+Honest boundary:
 
-- esta integración prueba una ruta observer-local real, no una garantía general
-  sobre mixed-namespace ni una matrix por distro
-- el subject por defecto intenta elegir una unidad activa con propiedades más
-  ricas; si no existe, cae al fallback seguro
-- aun así, la cobertura real sigue dependiendo de la unidad disponible en ese
-  host
+- this integration proves one real observer-local path, not a general guarantee
+  over mixed-namespace behavior or a distro matrix
+- the default subject tries to choose an active unit with richer properties; if
+  none exists, it falls back to the safe fallback
+- even then, real coverage still depends on the unit available on that host
 
-## Requisitos
+## Requirements
 
-- host Linux con `systemd` como PID 1
-- `go` disponible en `PATH`
+- Linux host with `systemd` as PID 1
+- `go` available in `PATH`
 
-## Ejecución rápida
+## Quick Run
 
-Por defecto intenta elegir una unidad activa con `User`, `Group` o
-`AmbientCapabilities` más informativas y deriva expectativas desde el host
-observer-local en el momento del test. Si no encuentra una mejor candidata,
-usa el fallback disponible.
+By default it tries to choose an active unit with more informative `User`,
+`Group`, or `AmbientCapabilities` values and derives expectations from the
+observer-local host at test time. If it does not find a better candidate, it
+uses the available fallback.
 
 ```bash
 SAVK_RUN_SYSTEMD_INTEGRATION=1 \
@@ -46,7 +45,7 @@ make integration GO=/usr/local/go/bin/go
 
 ## Overrides
 
-Si en tu host quieres probar otra unidad:
+If you want to test a different unit on your host:
 
 ```bash
 SAVK_RUN_SYSTEMD_INTEGRATION=1 \
@@ -55,10 +54,10 @@ GOCACHE=/tmp/savk-go-build \
 make integration GO=/usr/local/go/bin/go
 ```
 
-## Nota
+## Note
 
-`make integration` ahora falla si no se habilita explícitamente
-`SAVK_RUN_SYSTEMD_INTEGRATION=1`; un skip ya no cuenta como señal de release.
+`make integration` now fails unless `SAVK_RUN_SYSTEMD_INTEGRATION=1` is enabled
+explicitly; a skip no longer counts as release signal.
 
-Esto no reemplaza una matrix por distro. Es la ruta mínima reproducible para
-validar una ruta service-backed observer-local en un sistema real.
+This does not replace a distro matrix. It is the minimum reproducible path for
+validating one observer-local service-backed path on a real system.

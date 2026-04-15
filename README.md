@@ -2,19 +2,19 @@
 
 Security Appliance Verification Kit.
 
-SAVK verifica un host Linux contra un contrato estricto definido por el
-operador. No audita “best practices” genéricas; compara contrato contra
-realidad y emite evidencia.
+SAVK verifies a Linux host against a strict operator-defined contract.
+It does not audit generic "best practices"; it compares contract against
+reality and emits evidence.
 
-Estado actual:
+Current status:
 
-- `stdlib-only` en el core
-- parser zero-deps para un subset estricto de YAML
+- `stdlib-only` in the core
+- zero-dependency parser for a strict YAML subset
 - `savk validate`
 - `savk check`
-- reporter `json` estable y reporter `table`
-- dominios `paths`, `identity`, `sockets`, `services`
-- hardening activo de publish-readiness; la superficie más madura hoy es
+- stable `json` reporter and `table` reporter
+- `paths`, `identity`, `sockets`, and `services` domains
+- active publish-readiness hardening; the most mature surface today is
   parser + engine + `paths`
 
 Specs:
@@ -34,10 +34,10 @@ make build
 ./bin/savk version
 ```
 
-Artifacts oficiales de release:
+Official release artifacts:
 
 ```bash
-make dist VERSION=0.1.0 COMMIT=abc1234
+make dist VERSION=0.1.3 COMMIT=abc1234
 ```
 
 ## Commands
@@ -54,7 +54,7 @@ make dist VERSION=0.1.0 COMMIT=abc1234
 
 ## Quickstart
 
-Usa primero el slice más validado:
+Use the most validated slice first:
 
 ```bash
 ./bin/savk validate --contract examples/paths-only.yaml
@@ -67,7 +67,7 @@ Usa primero el slice más validado:
 - [sockets-only.yaml](examples/sockets-only.yaml)
 - [services-only.yaml](examples/services-only.yaml)
 - [identity-runtime.yaml](examples/identity-runtime.yaml)
-- [full-sensor-agent.yaml](examples/full-sensor-agent.yaml) - ejemplo mixto, no quickstart recomendado
+- [full-sensor-agent.yaml](examples/full-sensor-agent.yaml) - mixed example, not the recommended quickstart
 
 ## Minimal contract
 
@@ -85,12 +85,12 @@ paths:
 
 ## Domain maturity
 
-- `paths`: slice principal hoy. End-to-end, real filesystem checks, honesto para existencia, tipo, modo, owner y group.
-- `sockets`: filesystem-backed, implementado con `lstat` y tests reales de Unix socket cuando el entorno lo permite.
-- `services`: implementado para `linux-systemd` observer-local, cubierto por unit tests y una ruta de integración real mínima sobre un host real. La prueba real hoy sigue siendo estrecha y no demuestra todas las ramas service-backed en todos los hosts.
-- `identity`: runtime process identity observer-local via `service -> (MainPID + ControlGroup) -> /proc/<pid>/{status,cgroup}`. Tiene unit tests y una ruta de integración real mínima, pero no prueba de forma amplia entornos mixed-namespace ni todas las combinaciones de servicio reales.
+- `paths`: primary slice today. End-to-end, real filesystem checks, honest about existence, type, mode, owner, and group.
+- `sockets`: filesystem-backed, implemented with `lstat` and real Unix socket tests when the environment allows it.
+- `services`: implemented for observer-local `linux-systemd`, covered by unit tests and a minimal real integration path on a real host. The real test is still narrow today and does not demonstrate every service-backed branch on every host.
+- `identity`: observer-local runtime process identity via `service -> (MainPID + ControlGroup) -> /proc/<pid>/{status,cgroup}`. It has unit tests and a minimal real integration path, but it does not broadly prove mixed-namespace environments or every real service combination.
 
-Superficie actual por dominio:
+Current surface by domain:
 
 - `paths`: `exists`, `type`, `mode`, `owner`, `group`
 - `sockets`: `exists`, `owner`, `group`, `mode`
@@ -99,54 +99,55 @@ Superficie actual por dominio:
 
 ## Operational notes
 
-- `services` e `identity` son observer-local only en `v0.1.x`
-- `services` asume target `linux-systemd`
-- `paths` y `sockets` observan el nodo con `lstat`; no siguen symlinks
-- sin `--host-root`, `paths`, `sockets` y la ruta service-backed hacen
-  preflight sobre el `/proc/1/comm` observer-local
-- si el PID 1 observer-local no es `systemd`, el preflight reporta
-  `NAMESPACE_ISOLATION` y los checks dependientes quedan bloqueados
-- `--host-root` remapea solo `paths` y `sockets` a un root explícito del host
-- `host` en el reporte identifica al observador; si se usa `--host-root`, el
-  reporte añade `hostRoot` para dejar explícito el root observado
-- en `v0.1`, `services.capabilities` compara `AmbientCapabilities`
-- `evidence.raw` se redacta y trunca por defecto en el reporte
-- `--include-raw` expone el raw completo del collector bajo opt-in explícito
-- shell-out a `systemctl` fuerza `LANG=C` y `LC_ALL=C` y usa una ruta absoluta allowlisted tras resolución
-- los checks por nombre de `owner`/`group` en `paths` y `sockets` resuelven
-  contra `/etc/passwd` y `/etc/group` del sistema observado; si no hay mapping
-  confiable, degradan a `INSUFFICIENT_DATA`
-- los checks `services.run_as.user` y `services.run_as.group` solo resuelven
-  IDs numéricos y grupos primarios vía `/etc/passwd` y `/etc/group`
-  observer-locales; si esa evidencia no alcanza o es ambigua, degradan a
+- `services` and `identity` are observer-local only in `v0.1.x`
+- `services` assumes the `linux-systemd` target
+- `paths` and `sockets` observe the node with `lstat`; they do not follow symlinks
+- without `--host-root`, `paths`, `sockets`, and the service-backed path run
+  observer-local preflight against `/proc/1/comm`
+- if observer-local PID 1 is not `systemd`, preflight reports
+  `NAMESPACE_ISOLATION` and blocks dependent checks
+- `--host-root` remaps only `paths` and `sockets` to an explicit host root
+- `host` in the report identifies the observer; when `--host-root` is used, the
+  report also includes `hostRoot` to make the observed root explicit
+- in `v0.1`, `services.capabilities` compares `AmbientCapabilities`
+- `evidence.raw` is redacted and truncated by default in the report
+- `--include-raw` exposes the full collector raw output under explicit opt-in
+- shelling out to `systemctl` forces `LANG=C` and `LC_ALL=C` and uses an
+  allowlisted absolute path after resolution
+- name-based `owner` and `group` checks in `paths` and `sockets` resolve
+  against `/etc/passwd` and `/etc/group` from the observed system; if there is
+  no trustworthy mapping, they degrade to `INSUFFICIENT_DATA`
+- `services.run_as.user` and `services.run_as.group` resolve only numeric IDs
+  and primary groups through observer-local `/etc/passwd` and `/etc/group`; if
+  that evidence is insufficient or ambiguous, they degrade to
   `INSUFFICIENT_DATA`
-- SAVK no intenta demostrar en `v0.1.x` que `systemctl`, `/proc/<pid>` y las
-  account DB locales pertenezcan a un target distinto del observador
-- `json` es el contrato público estable; `table` es salida humana
+- SAVK does not try in `v0.1.x` to prove that `systemctl`, `/proc/<pid>`, and
+  the local account databases belong to a target different from the observer
+- `json` is the stable public contract; `table` is human output
 - exit codes:
 
 ```text
-0 -> solo PASS / NOT_APPLICABLE
-1 -> al menos un FAIL, sin ERROR / INSUFFICIENT_DATA
-2 -> al menos un ERROR o INSUFFICIENT_DATA
-3 -> error de CLI o contrato antes del engine
+0 -> only PASS / NOT_APPLICABLE
+1 -> at least one FAIL, with no ERROR / INSUFFICIENT_DATA
+2 -> at least one ERROR or INSUFFICIENT_DATA
+3 -> CLI or contract error before the engine
 ```
 
 ## Known limits in the current slice
 
-- solo soporta `linux-systemd`
-- el parser soporta un subset explícito de YAML, no YAML completo
-- `--host-root` hoy solo aplica a `paths` y `sockets`
-- la resolución por nombre depende de `/etc/passwd` y `/etc/group` visibles para
-  SAVK; cuentas solo-NSS fuera de esos archivos pueden degradar a
-  `INSUFFICIENT_DATA`
-- para `services` e `identity`, la semántica actual es observer-local; SAVK no
-  soporta en `v0.1.x` mixed-namespace con target service-backed separado del
-  observador
-- para `services` e `identity`, algunas clasificaciones de fallo todavía dependen
-  de `systemctl` y no de una API nativa de systemd
-- la integración real incluida en el repo requiere opt-in explícito y un host
-  `linux-systemd` real; fuera de eso, la confianza sigue viniendo sobre todo de
+- only `linux-systemd` is supported
+- the parser supports an explicit YAML subset, not full YAML
+- `--host-root` currently applies only to `paths` and `sockets`
+- name resolution depends on `/etc/passwd` and `/etc/group` visible to SAVK;
+  NSS-only accounts outside those files can degrade to `INSUFFICIENT_DATA`
+- for `services` and `identity`, the current semantics are observer-local; SAVK
+  does not support mixed-namespace `v0.1.x` flows with a service-backed target
+  separate from the observer
+- for `services` and `identity`, some failure classifications still depend on
+  `systemctl` rather than a native systemd API
+- the real integration path included in the repo requires explicit opt-in and a
+  real `linux-systemd` host; outside that, confidence still comes mostly from
   unit tests
-- no hay remediación, remote execution, snapshots ni SARIF
-- el empaquetado recomendado es binario o tarball; `npm` y `pnpm` no forman parte del release
+- there is no remediation, remote execution, snapshots, or SARIF
+- the recommended packaging is a binary or tarball; `npm` and `pnpm` are not
+  part of the release
