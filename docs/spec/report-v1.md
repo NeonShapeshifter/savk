@@ -260,7 +260,7 @@ Precedence:
 ```json
 {
   "schemaVersion": "savk-report/v1",
-  "toolVersion": "0.1.3",
+  "toolVersion": "0.1.4",
   "contractVersion": "savk/v1",
   "contractHash": "sha256:4c54e5b4...",
   "runID": "20260412T160000Z-8f2d",

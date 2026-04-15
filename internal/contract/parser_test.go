@@ -15,6 +15,9 @@ func TestParseValidFixtures(t *testing.T) {
 	}{
 		{name: "minimal-paths.yaml"},
 		{name: "full-contract.yaml"},
+		{name: "quoted-path-key.yaml"},
+		{name: "quoted-colon-path-key.yaml"},
+		{name: "quoted-hash-socket-key.yaml"},
 	}
 
 	for _, tc := range cases {
@@ -41,6 +44,43 @@ func TestParseValidFixtures(t *testing.T) {
 	}
 }
 
+func TestParseQuotedAbsoluteKeysDecodeToUnquotedPaths(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		wantPath   string
+		wantSocket string
+	}{
+		{name: "quoted-path-key.yaml", wantPath: "/etc/hosts"},
+		{name: "quoted-colon-path-key.yaml", wantPath: "/tmp/a:b"},
+		{name: "quoted-hash-socket-key.yaml", wantSocket: "/tmp/a#b"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg, err := ParseBytes(readFixture(t, "valid", tc.name))
+			if err != nil {
+				t.Fatalf("ParseBytes() error = %v", err)
+			}
+
+			if tc.wantPath != "" {
+				if _, ok := cfg.Paths[tc.wantPath]; !ok {
+					t.Fatalf("cfg.Paths missing key %q; got %v", tc.wantPath, keysOfPaths(cfg.Paths))
+				}
+			}
+			if tc.wantSocket != "" {
+				if _, ok := cfg.Sockets[tc.wantSocket]; !ok {
+					t.Fatalf("cfg.Sockets missing key %q; got %v", tc.wantSocket, keysOfSockets(cfg.Sockets))
+				}
+			}
+		})
+	}
+}
+
 func TestParseInvalidFixtures(t *testing.T) {
 	t.Parallel()
 
@@ -62,6 +102,8 @@ func TestParseInvalidFixtures(t *testing.T) {
 		{name: "identity-empty-capabilities.yaml", want: `at least one capability set must be defined at identity.sensor_runtime.capabilities`},
 		{name: "identity-inactive-service.yaml", want: `references sensor-agent.service but services.sensor-agent.service.state is inactive; runtime identity requires active at identity.sensor_runtime.service`},
 		{name: "empty-contract.yaml", want: "empty contract: at least one of services, sockets, paths, identity must be non-empty"},
+		{name: "quoted-relative-key.yaml", want: `relative path "var/log/savk" at paths`},
+		{name: "unquoted-colon-path-key.yaml", want: `unquoted mapping keys containing ':' are not supported at line 8`},
 	}
 
 	for _, tc := range cases {
@@ -99,6 +141,8 @@ func TestParseInvalidFixturesGolden(t *testing.T) {
 		"identity-empty-capabilities",
 		"identity-inactive-service",
 		"empty-contract",
+		"quoted-relative-key",
+		"unquoted-colon-path-key",
 	}
 
 	for _, name := range cases {
@@ -119,6 +163,22 @@ func TestParseInvalidFixturesGolden(t *testing.T) {
 			}
 		})
 	}
+}
+
+func keysOfPaths(values map[string]PathSpec) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func keysOfSockets(values map[string]SocketSpec) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 func TestParseBytesRejectsInvalidUTF8(t *testing.T) {

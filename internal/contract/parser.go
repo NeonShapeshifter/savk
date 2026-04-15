@@ -156,7 +156,7 @@ func parseMap(lines []sourceLine, index, indent int) (*node, int, error) {
 
 		key, rawValue, err := splitKeyValue(content, line.number)
 		if err != nil {
-			return nil, index, fmt.Errorf("%w (line %d)", err, line.number)
+			return nil, index, err
 		}
 		if _, exists := entries[key]; exists {
 			return nil, index, fmt.Errorf("duplicate key %q at line %d", key, line.number)
@@ -259,15 +259,14 @@ func parseInlineValue(raw string, line int) (*node, error) {
 		return nil, err
 	}
 
-	if len(raw) >= 2 && ((raw[0] == '"' && raw[len(raw)-1] == '"') || (raw[0] == '\'' && raw[len(raw)-1] == '\'')) {
+	if value, quoted, err := parseQuotedString(raw, line); err != nil {
+		return nil, err
+	} else if quoted {
 		return &node{
 			kind:      nodeString,
 			line:      line,
-			stringVal: raw[1 : len(raw)-1],
+			stringVal: value,
 		}, nil
-	}
-	if raw == `"` || raw == `'` || raw[0] == '"' || raw[0] == '\'' || raw[len(raw)-1] == '"' || raw[len(raw)-1] == '\'' {
-		return nil, fmt.Errorf("unterminated quoted string at line %d", line)
 	}
 
 	switch raw {
@@ -289,20 +288,95 @@ func parseInlineValue(raw string, line int) (*node, error) {
 }
 
 func splitKeyValue(content string, line int) (string, string, error) {
-	index := strings.IndexByte(content, ':')
+	index, sawPlainColon, err := keyValueDelimiter(content, line)
+	if err != nil {
+		return "", "", err
+	}
 	if index < 0 {
-		return "", "", fmt.Errorf("expected key:value pair")
+		return "", "", fmt.Errorf("expected key:value pair at line %d", line)
 	}
 
-	key := strings.TrimSpace(content[:index])
-	if key == "" {
-		return "", "", fmt.Errorf("empty mapping key")
+	rawKey := strings.TrimSpace(content[:index])
+	if rawKey == "" {
+		return "", "", fmt.Errorf("empty mapping key at line %d", line)
 	}
-	if err := rejectUnsupportedKeyFeature(key, line); err != nil {
+
+	key, quoted, err := parseQuotedString(rawKey, line)
+	if err != nil {
 		return "", "", err
+	}
+	if !quoted {
+		if sawPlainColon {
+			return "", "", fmt.Errorf("unquoted mapping keys containing ':' are not supported at line %d\n  hint: quote the key to preserve it literally", line)
+		}
+		if err := rejectUnsupportedKeyFeature(key, line); err != nil {
+			return "", "", err
+		}
 	}
 
 	return key, strings.TrimSpace(content[index+1:]), nil
+}
+
+func keyValueDelimiter(content string, line int) (int, bool, error) {
+	inSingle := false
+	inDouble := false
+	escaped := false
+	sawPlainColon := false
+
+	for i := 0; i < len(content); i++ {
+		ch := content[i]
+		switch ch {
+		case '\\':
+			if inDouble {
+				escaped = !escaped
+			} else {
+				escaped = false
+			}
+		case '\'':
+			if !inDouble {
+				inSingle = !inSingle
+			}
+			escaped = false
+		case '"':
+			if !inSingle && !escaped {
+				inDouble = !inDouble
+			} else {
+				escaped = false
+			}
+		case ':':
+			if inSingle || inDouble {
+				escaped = false
+				continue
+			}
+			if i+1 == len(content) || content[i+1] == ' ' {
+				return i, sawPlainColon, nil
+			}
+			sawPlainColon = true
+			escaped = false
+		default:
+			escaped = false
+		}
+	}
+
+	if inSingle || inDouble {
+		return -1, false, fmt.Errorf("unterminated quoted string at line %d", line)
+	}
+
+	return -1, sawPlainColon, nil
+}
+
+func parseQuotedString(raw string, line int) (string, bool, error) {
+	if raw == "" {
+		return "", false, nil
+	}
+	if len(raw) >= 2 && ((raw[0] == '"' && raw[len(raw)-1] == '"') || (raw[0] == '\'' && raw[len(raw)-1] == '\'')) {
+		return raw[1 : len(raw)-1], true, nil
+	}
+	if raw == `"` || raw == `'` || raw[0] == '"' || raw[0] == '\'' || raw[len(raw)-1] == '"' || raw[len(raw)-1] == '\'' {
+		return "", false, fmt.Errorf("unterminated quoted string at line %d", line)
+	}
+
+	return raw, false, nil
 }
 
 func decodeContract(root *node) (*Contract, error) {

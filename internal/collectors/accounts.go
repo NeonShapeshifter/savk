@@ -143,6 +143,11 @@ func (r *fileAccountResolver) NormalizeUserValue(value string) (string, error) {
 	if !isNumericIdentifier(value) {
 		return value, nil
 	}
+	if literal, ok, err := r.literalUserName(value); err != nil {
+		return "", err
+	} else if ok {
+		return literal, nil
+	}
 
 	id, err := strconv.ParseUint(value, 10, 32)
 	if err != nil {
@@ -156,6 +161,11 @@ func (r *fileAccountResolver) NormalizeGroupValue(value string) (string, error) 
 	value = strings.TrimSpace(value)
 	if !isNumericIdentifier(value) {
 		return value, nil
+	}
+	if literal, ok, err := r.literalGroupName(value); err != nil {
+		return "", err
+	} else if ok {
+		return literal, nil
 	}
 
 	id, err := strconv.ParseUint(value, 10, 32)
@@ -306,4 +316,32 @@ func (r *fileAccountResolver) loadGroup() error {
 	})
 
 	return r.groupErr
+}
+
+func (r *fileAccountResolver) literalUserName(value string) (string, bool, error) {
+	if err := r.loadPasswd(); err != nil {
+		return "", false, err
+	}
+	if _, ambiguous := r.passwdNameDup[value]; ambiguous {
+		return "", false, fmt.Errorf("user %q is ambiguous in %s", value, r.passwdPath)
+	}
+	if _, ok := r.passwdByName[value]; !ok {
+		return "", false, nil
+	}
+
+	return value, true, nil
+}
+
+func (r *fileAccountResolver) literalGroupName(value string) (string, bool, error) {
+	if err := r.loadGroup(); err != nil {
+		return "", false, err
+	}
+	if _, ambiguous := r.groupNameDup[value]; ambiguous {
+		return "", false, fmt.Errorf("group %q is ambiguous in %s", value, r.groupPath)
+	}
+	if _, ok := r.groupByName[value]; !ok {
+		return "", false, nil
+	}
+
+	return value, true, nil
 }

@@ -1,0 +1,9 @@
+apiVersion: savk/v1
+kind: ApplianceContract
+metadata:
+  name: quoted-hash-socket-key
+  target: linux-systemd
+
+sockets:
+  "/tmp/a#b":
+    mode: "0660"

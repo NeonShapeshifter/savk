@@ -1,0 +1,9 @@
+apiVersion: savk/v1
+kind: ApplianceContract
+metadata:
+  name: unquoted-colon-path-key
+  target: linux-systemd
+
+paths:
+  /tmp/a:b:
+    type: file

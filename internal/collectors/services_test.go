@@ -274,6 +274,108 @@ func TestBuildServiceChecksReturnsInsufficientDataWhenNumericUserCannotBeResolve
 	}
 }
 
+func TestBuildServiceChecksTreatsLiteralNumericUserNameAsName(t *testing.T) {
+	t.Parallel()
+
+	accountRoot := t.TempDir()
+	writeTestAccountFiles(t, accountRoot,
+		[]string{
+			"1001:x:2000:3000::/nonexistent:/usr/sbin/nologin",
+			"shadow:x:1001:1002::/nonexistent:/usr/sbin/nologin",
+		},
+		[]string{"grp3000:x:3000:"},
+	)
+
+	runner := &fakeCommandRunner{
+		results: map[string]CommandResult{
+			"literal-numeric-user.service": {
+				Stdout: strings.Join([]string{
+					"LoadState=loaded",
+					"ActiveState=active",
+					"Restart=no",
+					"User=1001",
+					"Group=",
+					"AmbientCapabilities=",
+				}, "\n"),
+			},
+		},
+	}
+
+	checks := buildServiceChecksWithResolver(map[string]contract.ServiceSpec{
+		"literal-numeric-user.service": {
+			State: contract.ServiceStateActive,
+			RunAs: &contract.RunAsSpec{
+				User: "1001",
+			},
+		},
+	}, runner, NewAccountResolver(accountRoot), false)
+
+	results, err := engine.New().Run(context.Background(), checks)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(results))
+	}
+	if results[1].Status != evidence.StatusPass {
+		t.Fatalf("user result status = %s, want %s", results[1].Status, evidence.StatusPass)
+	}
+}
+
+func TestBuildServiceChecksTreatsLiteralNumericGroupNameAsName(t *testing.T) {
+	t.Parallel()
+
+	accountRoot := t.TempDir()
+	writeTestAccountFiles(t, accountRoot,
+		[]string{"root:x:0:0::/root:/bin/sh"},
+		[]string{
+			"1002:x:4000:",
+			"shadowgrp:x:1002:",
+		},
+	)
+
+	runner := &fakeCommandRunner{
+		results: map[string]CommandResult{
+			"literal-numeric-group.service": {
+				Stdout: strings.Join([]string{
+					"LoadState=loaded",
+					"ActiveState=active",
+					"Restart=no",
+					"User=root",
+					"Group=1002",
+					"AmbientCapabilities=",
+				}, "\n"),
+			},
+		},
+	}
+
+	checks := buildServiceChecksWithResolver(map[string]contract.ServiceSpec{
+		"literal-numeric-group.service": {
+			State: contract.ServiceStateActive,
+			RunAs: &contract.RunAsSpec{
+				User:  "root",
+				Group: "1002",
+			},
+		},
+	}, runner, NewAccountResolver(accountRoot), false)
+
+	results, err := engine.New().Run(context.Background(), checks)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("len(results) = %d, want 3", len(results))
+	}
+	byID := make(map[string]evidence.CheckResult, len(results))
+	for _, result := range results {
+		byID[result.CheckID] = result
+	}
+	group := byID["service.literal-numeric-group.service.run_as.group"]
+	if group.Status != evidence.StatusPass {
+		t.Fatalf("group result status = %s, want %s", group.Status, evidence.StatusPass)
+	}
+}
+
 func TestBuildServiceChecksReturnInsufficientDataWhenNumericRunAsValuesAreAmbiguous(t *testing.T) {
 	t.Parallel()
 
@@ -310,6 +412,73 @@ func TestBuildServiceChecksReturnInsufficientDataWhenNumericRunAsValuesAreAmbigu
 			RunAs: &contract.RunAsSpec{
 				User:  "alpha",
 				Group: "alpha",
+			},
+		},
+	}, runner, NewAccountResolver(accountRoot), false)
+
+	results, err := engine.New().Run(context.Background(), checks)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("len(results) = %d, want 3", len(results))
+	}
+	byID := make(map[string]evidence.CheckResult, len(results))
+	for _, result := range results {
+		byID[result.CheckID] = result
+	}
+	user := byID["service.ambiguous-user.service.run_as.user"]
+	if user.Status != evidence.StatusInsufficientData {
+		t.Fatalf("user result status = %s, want %s", user.Status, evidence.StatusInsufficientData)
+	}
+	if user.ReasonCode != evidence.ReasonParseError {
+		t.Fatalf("user result reason = %s, want %s", user.ReasonCode, evidence.ReasonParseError)
+	}
+	group := byID["service.ambiguous-user.service.run_as.group"]
+	if group.Status != evidence.StatusInsufficientData {
+		t.Fatalf("group result status = %s, want %s", group.Status, evidence.StatusInsufficientData)
+	}
+	if group.ReasonCode != evidence.ReasonParseError {
+		t.Fatalf("group result reason = %s, want %s", group.ReasonCode, evidence.ReasonParseError)
+	}
+}
+
+func TestBuildServiceChecksReturnInsufficientDataWhenLiteralNumericRunAsNamesAreAmbiguous(t *testing.T) {
+	t.Parallel()
+
+	accountRoot := t.TempDir()
+	writeTestAccountFiles(t, accountRoot,
+		[]string{
+			"1001:x:2000:3000::/nonexistent:/usr/sbin/nologin",
+			"1001:x:2001:3001::/nonexistent:/usr/sbin/nologin",
+		},
+		[]string{
+			"1002:x:4000:",
+			"1002:x:4001:",
+		},
+	)
+
+	runner := &fakeCommandRunner{
+		results: map[string]CommandResult{
+			"ambiguous-literal-numeric.service": {
+				Stdout: strings.Join([]string{
+					"LoadState=loaded",
+					"ActiveState=active",
+					"Restart=no",
+					"User=1001",
+					"Group=1002",
+					"AmbientCapabilities=",
+				}, "\n"),
+			},
+		},
+	}
+
+	checks := buildServiceChecksWithResolver(map[string]contract.ServiceSpec{
+		"ambiguous-literal-numeric.service": {
+			State: contract.ServiceStateActive,
+			RunAs: &contract.RunAsSpec{
+				User:  "1001",
+				Group: "1002",
 			},
 		},
 	}, runner, NewAccountResolver(accountRoot), false)

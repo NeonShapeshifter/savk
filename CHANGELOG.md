@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.1.4 - 2026-04-15
+
+Patch release for the remaining post-hardening correctness issues.
+
+Includes:
+
+- quote-aware parsing for quoted absolute path/socket keys
+- explicit parser rejection for unquoted absolute keys containing `:`
+- correct handling of literal numeric-looking account names in `services.run_as.*`
+- shared production account-resolution semantics in the real integration helper
+- release metadata alignment for `v0.1.4`
+
 ## v0.1.0 - 2026-04-13
 
 Release candidate notes para `v0.1.0`.

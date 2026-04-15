@@ -1,0 +1,9 @@
+apiVersion: savk/v1
+kind: ApplianceContract
+metadata:
+  name: quoted-relative-key
+  target: linux-systemd
+
+paths:
+  "var/log/savk":
+    type: file

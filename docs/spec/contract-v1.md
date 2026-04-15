@@ -157,6 +157,9 @@ Rules:
   `/etc/group` are interpreted on the same observer that runs SAVK
 - if `systemctl` exposes numeric IDs or leaves `Group=` empty, SAVK can only
   normalize those values using local `/etc/passwd` and `/etc/group`
+- if a numeric-looking `User=` or `Group=` exactly matches a local account name,
+  SAVK MUST treat that exact name as the observed value before falling back to
+  numeric UID/GID normalization
 - if that evidence is insufficient, the result MUST degrade to
   `INSUFFICIENT_DATA`
 
@@ -177,6 +180,8 @@ The presence of an entry in `sockets` implies that the socket MUST exist.
 Rules:
 
 - the mapping key MUST be an absolute path
+- quoted mapping keys are valid and MUST be unquoted before path validation
+- in this YAML subset, an absolute socket key containing `:` MUST be quoted
 - `mode`, when present, MUST use quoted octal notation
 - an empty `SocketSpec` is valid and means "only verify existence"
 - `owner` and `group`, when present, compare by name
@@ -204,6 +209,8 @@ The presence of an entry in `paths` implies that the path MUST exist.
 Rules:
 
 - the mapping key MUST be an absolute path
+- quoted mapping keys are valid and MUST be unquoted before path validation
+- in this YAML subset, an absolute path key containing `:` MUST be quoted
 - `type`, when present, MUST be `file` or `directory`
 - `mode`, when present, MUST match `^0[0-7]{3,4}$`
 - an empty `PathSpec` is valid and means "only verify existence"

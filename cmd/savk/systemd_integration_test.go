@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"savk/internal/capabilities"
+	"savk/internal/collectors"
 )
 
 var integrationProperties = []string{
@@ -379,85 +380,123 @@ func integrationYAMLKeyList(indent, key string, values []string) []string {
 	return lines
 }
 
-func accountResolverForIntegration() interface {
-	NormalizeUserValue(value string) (string, error)
-	NormalizeGroupValue(value string) (string, error)
-	PrimaryGroupNameByUser(user string) (string, error)
-} {
-	return integrationAccountResolver
+func accountResolverForIntegration() collectors.AccountResolver {
+	return newIntegrationAccountResolver()
 }
 
-var integrationAccountResolver = newIntegrationAccountResolver()
+var newIntegrationAccountResolver = func() collectors.AccountResolver {
+	return collectors.NewAccountResolver("")
+}
 
-func newIntegrationAccountResolver() interface {
-	NormalizeUserValue(value string) (string, error)
-	NormalizeGroupValue(value string) (string, error)
-	PrimaryGroupNameByUser(user string) (string, error)
-} {
-	type accountResolver interface {
-		NormalizeUserValue(value string) (string, error)
-		NormalizeGroupValue(value string) (string, error)
-		PrimaryGroupNameByUser(user string) (string, error)
+func TestIntegrationExpectedServiceUserDelegatesToSharedResolver(t *testing.T) {
+	previous := newIntegrationAccountResolver
+	newIntegrationAccountResolver = func() collectors.AccountResolver {
+		return fakeIntegrationAccountResolver{
+			normalizeUserValue: func(value string) (string, error) {
+				if value != "1001" {
+					t.Fatalf("NormalizeUserValue() value = %q, want %q", value, "1001")
+				}
+				return "literal-1001", nil
+			},
+		}
+	}
+	t.Cleanup(func() {
+		newIntegrationAccountResolver = previous
+	})
+
+	got, err := integrationExpectedServiceUser("1001")
+	if err != nil {
+		t.Fatalf("integrationExpectedServiceUser() error = %v", err)
+	}
+	if got != "literal-1001" {
+		t.Fatalf("integrationExpectedServiceUser() = %q, want %q", got, "literal-1001")
+	}
+}
+
+func TestIntegrationExpectedServiceGroupDelegatesToSharedResolver(t *testing.T) {
+	previous := newIntegrationAccountResolver
+	newIntegrationAccountResolver = func() collectors.AccountResolver {
+		return fakeIntegrationAccountResolver{
+			normalizeUserValue: func(value string) (string, error) {
+				if value != "1001" {
+					t.Fatalf("NormalizeUserValue() value = %q, want %q", value, "1001")
+				}
+				return "literal-1001", nil
+			},
+			primaryGroupNameByUser: func(user string) (string, error) {
+				if user != "literal-1001" {
+					t.Fatalf("PrimaryGroupNameByUser() user = %q, want %q", user, "literal-1001")
+				}
+				return "primary-group", nil
+			},
+			normalizeGroupValue: func(value string) (string, error) {
+				if value != "1002" {
+					t.Fatalf("NormalizeGroupValue() value = %q, want %q", value, "1002")
+				}
+				return "literal-1002", nil
+			},
+		}
+	}
+	t.Cleanup(func() {
+		newIntegrationAccountResolver = previous
+	})
+
+	group, err := integrationExpectedServiceGroup("1001", "")
+	if err != nil {
+		t.Fatalf("integrationExpectedServiceGroup(blank) error = %v", err)
+	}
+	if group != "primary-group" {
+		t.Fatalf("integrationExpectedServiceGroup(blank) = %q, want %q", group, "primary-group")
 	}
 
-	return accountResolver(integrationLocalAccountResolver{})
+	group, err = integrationExpectedServiceGroup("1001", "1002")
+	if err != nil {
+		t.Fatalf("integrationExpectedServiceGroup(explicit) error = %v", err)
+	}
+	if group != "literal-1002" {
+		t.Fatalf("integrationExpectedServiceGroup(explicit) = %q, want %q", group, "literal-1002")
+	}
 }
 
-type integrationLocalAccountResolver struct{}
+type fakeIntegrationAccountResolver struct {
+	normalizeUserValue     func(value string) (string, error)
+	normalizeGroupValue    func(value string) (string, error)
+	primaryGroupNameByUser func(user string) (string, error)
+}
 
-func (integrationLocalAccountResolver) NormalizeUserValue(value string) (string, error) {
-	value = strings.TrimSpace(value)
-	if value == "" || !integrationIsNumeric(value) {
+func (f fakeIntegrationAccountResolver) NormalizeUserValue(value string) (string, error) {
+	if f.normalizeUserValue == nil {
 		return value, nil
 	}
-	return integrationLookupNameByID("/etc/passwd", value, 2)
+	return f.normalizeUserValue(value)
 }
 
-func (integrationLocalAccountResolver) NormalizeGroupValue(value string) (string, error) {
-	value = strings.TrimSpace(value)
-	if value == "" || !integrationIsNumeric(value) {
+func (f fakeIntegrationAccountResolver) NormalizeGroupValue(value string) (string, error) {
+	if f.normalizeGroupValue == nil {
 		return value, nil
 	}
-	return integrationLookupNameByID("/etc/group", value, 2)
+	return f.normalizeGroupValue(value)
 }
 
-func (integrationLocalAccountResolver) PrimaryGroupNameByUser(user string) (string, error) {
-	passwdData, err := os.ReadFile("/etc/passwd")
-	if err != nil {
-		return "", err
+func (f fakeIntegrationAccountResolver) PrimaryGroupNameByUser(user string) (string, error) {
+	if f.primaryGroupNameByUser == nil {
+		return "", fmt.Errorf("PrimaryGroupNameByUser(%q) unexpected call", user)
 	}
-	for _, line := range strings.Split(strings.TrimSpace(string(passwdData)), "\n") {
-		parts := strings.Split(line, ":")
-		if len(parts) < 4 || parts[0] != user {
-			continue
-		}
-		return integrationLookupNameByID("/etc/group", parts[3], 2)
-	}
-	return "", fmt.Errorf("user %q not found in /etc/passwd", user)
+	return f.primaryGroupNameByUser(user)
 }
 
-func integrationLookupNameByID(path, rawID string, idIndex int) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-		parts := strings.Split(line, ":")
-		if len(parts) <= idIndex || parts[idIndex] != rawID {
-			continue
-		}
-		if strings.TrimSpace(parts[0]) == "" {
-			break
-		}
-		return parts[0], nil
-	}
-	return "", fmt.Errorf("id %s not found in %s", rawID, path)
+func (f fakeIntegrationAccountResolver) UserNameByUID(uid uint32) (string, error) {
+	return "", fmt.Errorf("UserNameByUID(%d) unexpected call", uid)
 }
 
-func integrationIsNumeric(value string) bool {
-	if value == "" {
-		return false
-	}
-	_, err := strconv.Atoi(value)
-	return err == nil
+func (f fakeIntegrationAccountResolver) GroupNameByGID(gid uint32) (string, error) {
+	return "", fmt.Errorf("GroupNameByGID(%d) unexpected call", gid)
+}
+
+func (f fakeIntegrationAccountResolver) PasswdPath() string {
+	return "/etc/passwd"
+}
+
+func (f fakeIntegrationAccountResolver) GroupPath() string {
+	return "/etc/group"
 }

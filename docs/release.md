@@ -55,7 +55,7 @@ Explicit tradeoff:
 Release artifact for the current platform:
 
 ```bash
-make dist VERSION=0.1.3 COMMIT=abc1234
+make dist VERSION=0.1.4 COMMIT=abc1234
 ```
 
 That produces:

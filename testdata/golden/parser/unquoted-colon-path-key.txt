@@ -1,0 +1,2 @@
+unquoted mapping keys containing ':' are not supported at line 8
+  hint: quote the key to preserve it literally
