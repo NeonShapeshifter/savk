@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	version                  = "0.1.4"
+	version                  = "0.1.5"
 	commit                   = "unknown"
 	buildDate                = "unknown"
 	newPathChecker           = func() collectors.PathChecker { return collectors.OSPathChecker{} }
@@ -109,7 +109,8 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "--collector-timeout must be > 0")
 		return 3
 	}
-	if err := validateHostRoot(*hostRoot); err != nil {
+	normalizedHostRoot, err := normalizeHostRoot(*hostRoot)
+	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 3
 	}
@@ -138,12 +139,12 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "no domains selected")
 		return 3
 	}
-	if *hostRoot != "" && hasServiceBackedDomain(domains) {
+	if normalizedHostRoot != "" && hasServiceBackedDomain(domains) {
 		fmt.Fprintln(stderr, "--host-root is only supported for paths and sockets in v0.1")
 		return 3
 	}
 
-	checks, err := buildChecksForDomains(cfg, domains, *hostRoot)
+	checks, err := buildChecksForDomains(cfg, domains, normalizedHostRoot)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 3
@@ -171,7 +172,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		RunID:           startedAt.Format("20060102T150405Z") + fmt.Sprintf("-%d", os.Getpid()),
 		Target:          cfg.Metadata.Target,
 		Host:            host,
-		HostRoot:        *hostRoot,
+		HostRoot:        normalizedHostRoot,
 		StartedAt:       startedAt,
 		DurationMs:      time.Since(startedAt).Milliseconds(),
 		IncludeRaw:      *includeRaw,
@@ -365,23 +366,24 @@ func withPrerequisite(checks []engine.Check, prerequisite string) []engine.Check
 	return wrapped
 }
 
-func validateHostRoot(root string) error {
+func normalizeHostRoot(root string) (string, error) {
 	if root == "" {
-		return nil
+		return "", nil
 	}
 	if !filepath.IsAbs(root) {
-		return fmt.Errorf("--host-root must be an absolute path")
+		return "", fmt.Errorf("--host-root must be an absolute path")
 	}
+	root = filepath.Clean(root)
 
 	info, err := os.Stat(root)
 	if err != nil {
-		return fmt.Errorf("--host-root %s: %w", root, err)
+		return "", fmt.Errorf("--host-root %s: %w", root, err)
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("--host-root must point to a directory")
+		return "", fmt.Errorf("--host-root must point to a directory")
 	}
 
-	return nil
+	return root, nil
 }
 
 func hasServiceBackedDomain(domains []string) bool {

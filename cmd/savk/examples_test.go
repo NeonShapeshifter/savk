@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"slices"
@@ -50,5 +51,24 @@ func TestExamplesParseAndBuildChecks(t *testing.T) {
 				t.Fatalf("buildChecksForDomains(%q) returned 0 checks", path)
 			}
 		})
+	}
+}
+
+func TestREADMEQuickstartValidatePasses(t *testing.T) {
+	t.Parallel()
+
+	contractPath := filepath.Join("..", "..", "examples", "paths-only.yaml")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"validate", "--contract", contractPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run(validate quickstart) code = %d, want 0; stderr = %q", code, stderr.String())
+	}
+	if stdout.String() != "contract valid\n" {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), "contract valid\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}
 }

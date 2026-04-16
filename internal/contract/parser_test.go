@@ -204,6 +204,165 @@ func TestParseBytesRejectsInvalidUTF8(t *testing.T) {
 	}
 }
 
+func TestParseBytesRejectsMalformedQuotedScalars(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name         string
+		metadataName string
+	}{
+		{name: "malformed double-quoted scalar", metadataName: `"bad"name"`},
+		{name: "malformed single-quoted scalar", metadataName: `'bad'name'`},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			data := []byte(strings.Join([]string{
+				"apiVersion: savk/v1",
+				"kind: ApplianceContract",
+				"metadata:",
+				"  name: " + tc.metadataName,
+				"  target: linux-systemd",
+				"paths:",
+				"  /etc/hosts:",
+				"    type: file",
+				"",
+			}, "\n"))
+
+			_, err := ParseBytes(data)
+			if err == nil {
+				t.Fatal("ParseBytes() error = nil, want error")
+			}
+			if !strings.Contains(err.Error(), "unterminated quoted string") {
+				t.Fatalf("ParseBytes() error = %q, want malformed-quote message", err.Error())
+			}
+		})
+	}
+}
+
+func TestParseQuotedScalarsDecodeEscapes(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name         string
+		metadataName string
+		pathKey      string
+		ownerValue   string
+		wantName     string
+		wantPath     string
+		wantOwner    string
+	}{
+		{
+			name:         "single quoted doubled quote",
+			metadataName: `'sensor''agent'`,
+			pathKey:      `'/tmp/quote''file'`,
+			ownerValue:   `'ops''team'`,
+			wantName:     "sensor'agent",
+			wantPath:     "/tmp/quote'file",
+			wantOwner:    "ops'team",
+		},
+		{
+			name:         "double quoted escaped quote",
+			metadataName: `"sensor\"agent"`,
+			pathKey:      `"/tmp/quote\"file"`,
+			ownerValue:   `"ops\"team"`,
+			wantName:     `sensor"agent`,
+			wantPath:     `/tmp/quote"file`,
+			wantOwner:    `ops"team`,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			data := []byte(strings.Join([]string{
+				"apiVersion: savk/v1",
+				"kind: ApplianceContract",
+				"metadata:",
+				"  name: " + tc.metadataName,
+				"  target: linux-systemd",
+				"paths:",
+				"  " + tc.pathKey + ":",
+				"    owner: " + tc.ownerValue,
+				"    type: file",
+				"",
+			}, "\n"))
+
+			cfg, err := ParseBytes(data)
+			if err != nil {
+				t.Fatalf("ParseBytes() error = %v", err)
+			}
+			if cfg.Metadata.Name != tc.wantName {
+				t.Fatalf("Metadata.Name = %q, want %q", cfg.Metadata.Name, tc.wantName)
+			}
+
+			spec, ok := cfg.Paths[tc.wantPath]
+			if !ok {
+				t.Fatalf("cfg.Paths missing decoded key %q; got %v", tc.wantPath, keysOfPaths(cfg.Paths))
+			}
+			if spec.Owner != tc.wantOwner {
+				t.Fatalf("spec.Owner = %q, want %q", spec.Owner, tc.wantOwner)
+			}
+		})
+	}
+}
+
+func TestParseBytesRejectsUnsupportedQuotedEscapes(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		lines []string
+	}{
+		{
+			name: "unsupported double quoted value escape",
+			lines: []string{
+				"apiVersion: savk/v1",
+				"kind: ApplianceContract",
+				"metadata:",
+				`  name: "bad\qname"`,
+				"  target: linux-systemd",
+				"paths:",
+				"  /etc/hosts:",
+				"    type: file",
+			},
+		},
+		{
+			name: "unsupported double quoted key escape",
+			lines: []string{
+				"apiVersion: savk/v1",
+				"kind: ApplianceContract",
+				"metadata:",
+				"  name: bad-key",
+				"  target: linux-systemd",
+				"paths:",
+				`  "/tmp/bad\qpath":`,
+				"    type: file",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := ParseBytes([]byte(strings.Join(append(tc.lines, ""), "\n")))
+			if err == nil {
+				t.Fatal("ParseBytes() error = nil, want error")
+			}
+			if !strings.Contains(err.Error(), `unsupported escape sequence \q`) {
+				t.Fatalf("ParseBytes() error = %q, want unsupported-escape message", err.Error())
+			}
+		})
+	}
+}
+
 func readFixture(t *testing.T, kind, name string) []byte {
 	t.Helper()
 

@@ -143,18 +143,33 @@ func (r *fileAccountResolver) NormalizeUserValue(value string) (string, error) {
 	if !isNumericIdentifier(value) {
 		return value, nil
 	}
-	if literal, ok, err := r.literalUserName(value); err != nil {
-		return "", err
-	} else if ok {
-		return literal, nil
-	}
-
 	id, err := strconv.ParseUint(value, 10, 32)
 	if err != nil {
 		return "", fmt.Errorf("invalid numeric uid %q", value)
 	}
+	if err := r.loadPasswd(); err != nil {
+		return "", err
+	}
 
-	return r.UserNameByUID(uint32(id))
+	literal, literalOK, err := r.lookupLiteralUserName(value)
+	if err != nil {
+		return "", err
+	}
+	byUID, byUIDOK, err := r.lookupUserNameByUID(uint32(id))
+	if err != nil {
+		return "", err
+	}
+	if literalOK && byUIDOK && literal != byUID {
+		return "", fmt.Errorf("numeric user value %q is ambiguous in %s: literal name %q conflicts with uid %d -> %q", value, r.passwdPath, literal, id, byUID)
+	}
+	if literalOK {
+		return literal, nil
+	}
+	if byUIDOK {
+		return byUID, nil
+	}
+
+	return "", fmt.Errorf("uid %d is not present in %s", id, r.passwdPath)
 }
 
 func (r *fileAccountResolver) NormalizeGroupValue(value string) (string, error) {
@@ -162,18 +177,33 @@ func (r *fileAccountResolver) NormalizeGroupValue(value string) (string, error) 
 	if !isNumericIdentifier(value) {
 		return value, nil
 	}
-	if literal, ok, err := r.literalGroupName(value); err != nil {
-		return "", err
-	} else if ok {
-		return literal, nil
-	}
-
 	id, err := strconv.ParseUint(value, 10, 32)
 	if err != nil {
 		return "", fmt.Errorf("invalid numeric gid %q", value)
 	}
+	if err := r.loadGroup(); err != nil {
+		return "", err
+	}
 
-	return r.GroupNameByGID(uint32(id))
+	literal, literalOK, err := r.lookupLiteralGroupName(value)
+	if err != nil {
+		return "", err
+	}
+	byGID, byGIDOK, err := r.lookupGroupNameByGID(uint32(id))
+	if err != nil {
+		return "", err
+	}
+	if literalOK && byGIDOK && literal != byGID {
+		return "", fmt.Errorf("numeric group value %q is ambiguous in %s: literal name %q conflicts with gid %d -> %q", value, r.groupPath, literal, id, byGID)
+	}
+	if literalOK {
+		return literal, nil
+	}
+	if byGIDOK {
+		return byGID, nil
+	}
+
+	return "", fmt.Errorf("gid %d is not present in %s", id, r.groupPath)
 }
 
 func (r *fileAccountResolver) loadPasswd() error {
@@ -318,30 +348,52 @@ func (r *fileAccountResolver) loadGroup() error {
 	return r.groupErr
 }
 
-func (r *fileAccountResolver) literalUserName(value string) (string, bool, error) {
-	if err := r.loadPasswd(); err != nil {
-		return "", false, err
-	}
+func (r *fileAccountResolver) lookupLiteralUserName(value string) (string, bool, error) {
 	if _, ambiguous := r.passwdNameDup[value]; ambiguous {
 		return "", false, fmt.Errorf("user %q is ambiguous in %s", value, r.passwdPath)
 	}
-	if _, ok := r.passwdByName[value]; !ok {
+	entry, ok := r.passwdByName[value]
+	if !ok {
 		return "", false, nil
 	}
 
-	return value, true, nil
+	return entry.name, true, nil
 }
 
-func (r *fileAccountResolver) literalGroupName(value string) (string, bool, error) {
-	if err := r.loadGroup(); err != nil {
-		return "", false, err
-	}
+func (r *fileAccountResolver) lookupLiteralGroupName(value string) (string, bool, error) {
 	if _, ambiguous := r.groupNameDup[value]; ambiguous {
 		return "", false, fmt.Errorf("group %q is ambiguous in %s", value, r.groupPath)
 	}
-	if _, ok := r.groupByName[value]; !ok {
+	entry, ok := r.groupByName[value]
+	if !ok {
 		return "", false, nil
 	}
 
-	return value, true, nil
+	return entry.name, true, nil
+}
+
+func (r *fileAccountResolver) lookupUserNameByUID(uid uint32) (string, bool, error) {
+	if _, ambiguous := r.passwdUIDDup[uid]; ambiguous {
+		return "", false, fmt.Errorf("uid %d is ambiguous in %s", uid, r.passwdPath)
+	}
+
+	entry, ok := r.passwdByUID[uid]
+	if !ok {
+		return "", false, nil
+	}
+
+	return entry.name, true, nil
+}
+
+func (r *fileAccountResolver) lookupGroupNameByGID(gid uint32) (string, bool, error) {
+	if _, ambiguous := r.groupGIDDup[gid]; ambiguous {
+		return "", false, fmt.Errorf("gid %d is ambiguous in %s", gid, r.groupPath)
+	}
+
+	entry, ok := r.groupByGID[gid]
+	if !ok {
+		return "", false, nil
+	}
+
+	return entry.name, true, nil
 }

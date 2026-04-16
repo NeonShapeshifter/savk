@@ -1,5 +1,5 @@
 GO ?= go
-VERSION ?= 0.1.4
+VERSION ?= 0.1.5
 COMMIT ?= unknown
 BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 GOOS ?= $(shell $(GO) env GOOS)
@@ -20,7 +20,7 @@ test:
 
 integration:
 	test "$$SAVK_RUN_SYSTEMD_INTEGRATION" = "1"
-	$(GO) test ./cmd/savk -run TestSystemdIntegration -count=1
+	$(GO) test ./cmd/savk -run TestSystemdIntegrationSmoke -count=1
 
 dist:
 	mkdir -p $(DIST_DIR)

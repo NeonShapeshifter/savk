@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+## v0.1.5 - 2026-04-16
+
+Patch release for the final pre-ship correctness and release-truth gaps.
+
+Includes:
+
+- decode supported quoted-scalar escapes so `validate` and `check` target the
+  same literal keys and values
+- reject unsupported quoted-string escapes explicitly instead of accepting and
+  mis-targeting them later
+- align quickstart, changelog, checklist, and local artifact/version guidance
+  around `v0.1.5`
+- narrow `identity` wording to current observer-local runtime process
+  observation with bounded provenance confidence
+
 ## v0.1.4 - 2026-04-15
 
 Patch release for the remaining post-hardening correctness issues.

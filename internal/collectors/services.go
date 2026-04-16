@@ -29,6 +29,10 @@ var allowedSystemctlPaths = map[string]struct{}{
 	"/bin/systemctl":     {},
 }
 
+func ResolveObserverLocalSystemctlPath() (string, error) {
+	return resolveAllowedSystemctlPath()
+}
+
 func (OSCommandRunner) Run(ctx context.Context, argv []string) (CommandResult, error) {
 	if len(argv) == 0 {
 		return CommandResult{}, fmt.Errorf("empty command")
@@ -203,7 +207,10 @@ func (c serviceCheck) Run(ctx context.Context) evidence.CheckResult {
 		case errors.Is(err, errPermissionDenied):
 			return serviceError(evidence.ReasonPermissionDenied, fmt.Sprintf("permission denied while reading observer-local service %s", c.name), command, unit.exitCodePtr(), unit.raw)
 		case errors.Is(err, errCommandUnavailable), errors.Is(err, errUnexpectedCommand):
-			return serviceError(evidence.ReasonParseError, fmt.Sprintf("systemctl executable is not available or not allowlisted for service %s", c.name), nil, nil, unit.raw)
+			return serviceUnsupportedEnvironment(
+				fmt.Sprintf("unsupported observer-local environment for service %s: %s", c.name, describeSystemctlEnvironmentError(err)),
+				unit.raw,
+			)
 		case errors.Is(err, errServiceParse):
 			return serviceError(evidence.ReasonParseError, fmt.Sprintf("unable to parse systemctl output for service %s", c.name), command, unit.exitCodePtr(), unit.raw)
 		default:
@@ -526,6 +533,30 @@ func serviceInsufficientData(message string, command []string, exitCode *int, ra
 			Raw:         raw,
 		},
 		Message: message,
+	}
+}
+
+func serviceUnsupportedEnvironment(message, raw string) evidence.CheckResult {
+	return evidence.CheckResult{
+		Status: evidence.StatusError,
+		Evidence: evidence.Evidence{
+			Source:      "systemctl lookup",
+			Collector:   "services",
+			CollectedAt: time.Now().UTC(),
+			Raw:         raw,
+		},
+		Message: message,
+	}
+}
+
+func describeSystemctlEnvironmentError(err error) string {
+	switch {
+	case errors.Is(err, errCommandUnavailable):
+		return "systemctl is not available in PATH; service-backed checks currently require an allowlisted absolute observer-local systemctl path"
+	case errors.Is(err, errUnexpectedCommand):
+		return fmt.Sprintf("resolved systemctl path is outside the current allowlist; service-backed checks currently require /usr/bin/systemctl or /bin/systemctl (%v)", err)
+	default:
+		return err.Error()
 	}
 }
 

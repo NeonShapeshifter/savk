@@ -29,7 +29,7 @@ var integrationProperties = []string{
 	"ControlGroup",
 }
 
-func TestSystemdIntegration(t *testing.T) {
+func TestSystemdIntegrationSmoke(t *testing.T) {
 	if os.Getenv("SAVK_RUN_SYSTEMD_INTEGRATION") != "1" {
 		t.Skip("set SAVK_RUN_SYSTEMD_INTEGRATION=1 to run against a real linux-systemd host")
 	}
@@ -45,7 +45,7 @@ func TestSystemdIntegration(t *testing.T) {
 		t.Fatalf("ActiveState = %q, want %q", properties["ActiveState"], "active")
 	}
 	t.Logf(
-		"observer-local integration subject: %s (user=%q group=%q ambient=%q)",
+		"observer-local smoke-test subject: %s (user=%q group=%q ambient=%q)",
 		service,
 		properties["User"],
 		properties["Group"],
@@ -109,7 +109,7 @@ func TestSystemdIntegration(t *testing.T) {
 
 	code := run([]string{"check", "--contract", contractPath, "--format", "json", "--domain", "services,identity"}, &stdout, &stderr)
 	if code != 0 {
-		t.Fatalf("run(systemd integration) code = %d, want 0; stderr = %q\nstdout=%s", code, stderr.String(), stdout.String())
+		t.Fatalf("run(systemd integration smoke) code = %d, want 0; stderr = %q\nstdout=%s", code, stderr.String(), stdout.String())
 	}
 
 	type reportResult struct {
@@ -231,11 +231,16 @@ func integrationSystemctlShow(t *testing.T, ctx context.Context, service string,
 }
 
 func integrationTrySystemctlShow(ctx context.Context, service string, properties []string) (map[string]string, error) {
+	systemctlPath, err := collectors.ResolveObserverLocalSystemctlPath()
+	if err != nil {
+		return nil, err
+	}
+
 	args := []string{"show", service}
 	for _, property := range properties {
 		args = append(args, "--property="+property)
 	}
-	cmd := exec.CommandContext(ctx, "systemctl", args...)
+	cmd := exec.CommandContext(ctx, systemctlPath, args...)
 	cmd.Env = append(os.Environ(), "LANG=C", "LC_ALL=C")
 	output, err := cmd.Output()
 	if err != nil {
@@ -266,6 +271,66 @@ func integrationTrySystemctlShow(ctx context.Context, service string, properties
 	}
 
 	return result, nil
+}
+
+func TestIntegrationSmokeUsesProductionSystemctlResolution(t *testing.T) {
+	dir := t.TempDir()
+	fakeSystemctl := filepath.Join(dir, "systemctl")
+	if err := os.WriteFile(fakeSystemctl, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("os.WriteFile(fake systemctl) error = %v", err)
+	}
+
+	previousPath := os.Getenv("PATH")
+	if err := os.Setenv("PATH", dir); err != nil {
+		t.Fatalf("os.Setenv(PATH) error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Setenv("PATH", previousPath)
+	})
+
+	_, err := integrationTrySystemctlShow(context.Background(), "fake.service", integrationProperties)
+	if err == nil {
+		t.Fatal("integrationTrySystemctlShow() error = nil, want allowlist failure")
+	}
+	if !strings.Contains(err.Error(), fakeSystemctl) {
+		t.Fatalf("integrationTrySystemctlShow() error = %q, want path detail %q", err.Error(), fakeSystemctl)
+	}
+
+	contractPath := filepath.Join(dir, "contract.yaml")
+	contractBody := strings.Join([]string{
+		"apiVersion: savk/v1",
+		"kind: ApplianceContract",
+		"metadata:",
+		"  name: systemctl-parity",
+		"  target: linux-systemd",
+		"services:",
+		"  fake.service:",
+		"    state: active",
+	}, "\n") + "\n"
+	if err := os.WriteFile(contractPath, []byte(contractBody), 0o644); err != nil {
+		t.Fatalf("os.WriteFile(contract) error = %v", err)
+	}
+
+	previousProbe := newServiceNamespaceProbe
+	newServiceNamespaceProbe = func() collectors.ServiceNamespaceProbe {
+		return fakeMainNamespaceProbe{value: "systemd"}
+	}
+	t.Cleanup(func() {
+		newServiceNamespaceProbe = previousProbe
+	})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"check", "--contract", contractPath, "--format", "json", "--domain", "services"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("run(check) code = %d, want 2; stderr = %q\nstdout=%s", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "unsupported observer-local environment") {
+		t.Fatalf("stdout = %s, want unsupported-environment message", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), fakeSystemctl) {
+		t.Fatalf("stdout = %s, want rejected systemctl path %q", stdout.String(), fakeSystemctl)
+	}
 }
 
 func integrationReadProcStatus(t *testing.T, pid int) integrationProcStatus {

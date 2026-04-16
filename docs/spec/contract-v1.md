@@ -64,6 +64,12 @@ Restrictions:
 - tabs are invalid
 - full-line comments are valid
 - inline comments are not required by the spec
+- quoted scalars MUST use matching opening and closing quotes; malformed quoted
+  scalars are invalid
+- single-quoted scalars support doubled single quotes (`''`) for a literal `'`
+- double-quoted scalars support only this escaped subset in `v0.1`:
+  `\\`, `\"`, `\n`, `\r`, `\t`
+- unsupported double-quoted escape sequences are invalid
 - duplicate keys are invalid
 - unknown fields are invalid
 
@@ -132,7 +138,7 @@ unit name is safest; using the full unit name is RECOMMENDED.
 | Field | Type | Required | Notes |
 |---|---|---:|---|
 | `state` | string | yes | `active`, `inactive`, `failed` |
-| `run_as` | mapping | no | expected process identity |
+| `run_as` | mapping | no | expected unit-property identity |
 | `restart` | string | no | `always`, `on-failure`, `no` |
 | `capabilities` | list[string] | no | expected `AmbientCapabilities` |
 
@@ -152,15 +158,23 @@ Rules:
   `CAP_NET_BIND_SERVICE`
 - in `v0.1`, `services.<name>.capabilities` compares against the
   `AmbientCapabilities` property observed through `systemctl show`
-- `run_as.user` and `run_as.group`, when present, compare by name
+- `run_as.user` and `run_as.group`, when present, compare the normalized names
+  derived from observer-local `systemctl show User=` and `Group=` unit
+  properties
+- for runtime process identity, use the `identity` domain rather than
+  `services.run_as.*`
 - `services` in `v0.1` is observer-local: `systemctl`, `/etc/passwd`, and
   `/etc/group` are interpreted on the same observer that runs SAVK
+- service-backed checks currently require observer-local `systemctl` to resolve
+  to an allowlisted absolute path (`/usr/bin/systemctl` or `/bin/systemctl`);
+  if that trust boundary is not met, SAVK MUST fail closed with `ERROR` and an
+  explicit unsupported-environment message
 - if `systemctl` exposes numeric IDs or leaves `Group=` empty, SAVK can only
   normalize those values using local `/etc/passwd` and `/etc/group`
-- if a numeric-looking `User=` or `Group=` exactly matches a local account name,
-  SAVK MUST treat that exact name as the observed value before falling back to
-  numeric UID/GID normalization
-- if that evidence is insufficient, the result MUST degrade to
+- if a numeric-looking `User=` or `Group=` can be interpreted both as an exact
+  local account name and as a UID/GID mapping, and those interpretations
+  disagree, SAVK MUST treat the evidence as ambiguous
+- if that evidence is insufficient or ambiguous, the result MUST degrade to
   `INSUFFICIENT_DATA`
 
 ### Sockets
@@ -228,8 +242,9 @@ Rules:
 The key is a logical label for the observed runtime subject. It does not
 necessarily represent a local user on the host.
 
-In `v0.1`, `identity` models the effective identity of a running process.
-The only selector supported in `v0.1` is a systemd service.
+In `v0.1`, `identity` models the current observer-local effective identity of a
+running process selected through a systemd service observation. The only
+selector supported in `v0.1` is a systemd service.
 
 `RuntimeIdentitySpec`:
 
@@ -265,13 +280,21 @@ Rules:
   + reads of `/proc/<pid>/status` and `/proc/<pid>/cgroup`
 - `identity` in `v0.1` is observer-local; SAVK does not support remapping or
   proving a runtime target distinct from the observer
+- a `PASS` in `identity` means the current observer-local process observation
+  matched the contract at collection time under the current `MainPID` +
+  `ControlGroup` linkage; it does not claim durable or cross-namespace process
+  provenance
+- `identity` shares the same current observer-local `systemctl` trust boundary
+  as `services`; if the resolved `systemctl` path is outside the current
+  allowlist, SAVK MUST fail closed with `ERROR` and an explicit
+  unsupported-environment message
 - `identity` checks depend on `service.<unit>.state`
 - if `identity.<label>.service` references a declared entry in `services`,
   `services.<unit>.state` MUST be `active`
 - if the referenced unit is not declared in `services`, `savk check` MAY
   synthesize the prerequisite `service.<unit>.state`
-- if `MainPID` can no longer be proven against the observed `ControlGroup`,
-  SAVK MUST degrade the result to `INSUFFICIENT_DATA`
+- if the current `MainPID` can no longer be kept tied to the current observed
+  `ControlGroup`, SAVK MUST degrade the result to `INSUFFICIENT_DATA`
 - if the observer-local context cannot prove the service-backed path, SAVK MUST
   fail closed with `ERROR/NAMESPACE_ISOLATION` or degrade to
   `INSUFFICIENT_DATA`

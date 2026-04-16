@@ -30,8 +30,10 @@ Prerequisites:
 Honest scope of that integration:
 
 - it covers namespace preflight
-- it covers one real observer-local service-backed release path
+- it covers one narrow observer-local service-backed smoke path
 - it is still a minimum path on a real host, not a distro matrix
+- it is not a fully independent oracle for every hardened service-backed edge
+  case
 
 Local build:
 
@@ -51,11 +53,15 @@ Explicit tradeoff:
   degrades to `INSUFFICIENT_DATA`
 - `services` and `identity` are observer-local only in `v0.1.x`; SAVK does not
   try to remap or prove a service-backed target distinct from the observer
+- service-backed checks currently also assume observer-local `systemctl`
+  resolves to `/usr/bin/systemctl` or `/bin/systemctl`; outside that trust
+  boundary, SAVK fails closed with an explicit unsupported-environment `ERROR`
 
 Release artifact for the current platform:
 
 ```bash
-make dist VERSION=0.1.4 COMMIT=abc1234
+make clean
+make dist VERSION=0.1.5 COMMIT=abc1234
 ```
 
 That produces:
@@ -63,6 +69,14 @@ That produces:
 - `dist/savk-<version>-<goos>-<goarch>`
 - `dist/savk-<version>-<goos>-<goarch>.tar.gz`
 - `dist/SHA256SUMS`
+
+Release hygiene for the local working tree:
+
+- run `make clean` before `make build` / `make dist` so stale ignored artifacts
+  from earlier versions do not sit next to the current release candidate
+- if local `bin/` or `dist/` contents are not from the current tree and current
+  version, treat them as stale and regenerate them before using them as release
+  signal
 
 Operational checklist:
 

@@ -73,8 +73,12 @@ Recommended fields:
 - `host` identifies the observer that executed SAVK
 - in `v0.1.x`, `services` and `identity` results are observer-local relative
   to that `host`
-- `hostRoot`, when present, MUST reflect the remapped filesystem root used for
-  `paths` and `sockets`
+- for `identity`, a `PASS` is limited to the current observer-local process
+  observation at collection time under the current `MainPID` +
+  `ControlGroup` linkage; it is not a durable provenance proof across time or
+  namespaces
+- `hostRoot`, when present, MUST reflect the normalized remapped filesystem root
+  actually used for `paths` and `sockets`
 - `startedAt` MUST be serialized in UTC
 - `durationMs` MUST be `>= 0`
 - `results` MUST be stably ordered
@@ -151,6 +155,9 @@ PREREQUISITE_FAILED
 ### Reason code usage
 
 - `reasonCode` MAY be omitted or set to `null` when it adds no useful detail
+- an explicit unsupported-environment or trust-boundary limitation MAY use
+  `ERROR` with omitted `reasonCode` when no existing reason code is precise
+  enough and the `message` states the limit directly
 - `TIMEOUT` SHOULD accompany `ERROR`
 - `PERMISSION_DENIED` SHOULD accompany `ERROR`
 - `NOT_FOUND` MAY accompany `FAIL` when the observed absence is solid evidence
@@ -260,7 +267,7 @@ Precedence:
 ```json
 {
   "schemaVersion": "savk-report/v1",
-  "toolVersion": "0.1.4",
+  "toolVersion": "0.1.5",
   "contractVersion": "savk/v1",
   "contractHash": "sha256:4c54e5b4...",
   "runID": "20260412T160000Z-8f2d",

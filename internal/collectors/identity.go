@@ -188,23 +188,28 @@ func (c identityCheck) Run(ctx context.Context) evidence.CheckResult {
 	if err != nil {
 		switch {
 		case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
-			return c.errorResult(evidence.StatusError, evidence.ReasonTimeout, fmt.Sprintf("collector timed out while reading runtime identity for service %s", c.spec.Service), observed)
+			return c.errorResult(evidence.StatusError, evidence.ReasonTimeout, fmt.Sprintf("collector timed out while reading observer-local runtime process identity for service %s", c.spec.Service), observed)
 		case errors.Is(err, errNamespaceIsolation):
 			return c.errorResult(evidence.StatusError, evidence.ReasonNamespaceIsolation, fmt.Sprintf("service-backed checks are observer-local in v0.1.x; observer-local systemd is not reachable for service %s", c.spec.Service), observed)
 		case errors.Is(err, errPermissionDenied), errors.Is(err, fs.ErrPermission):
-			return c.errorResult(evidence.StatusError, evidence.ReasonPermissionDenied, fmt.Sprintf("permission denied while reading observer-local runtime identity for service %s", c.spec.Service), observed)
+			return c.errorResult(evidence.StatusError, evidence.ReasonPermissionDenied, fmt.Sprintf("permission denied while reading observer-local runtime process identity for service %s", c.spec.Service), observed)
 		case errors.Is(err, errCommandUnavailable), errors.Is(err, errUnexpectedCommand):
-			return c.errorResult(evidence.StatusError, evidence.ReasonParseError, fmt.Sprintf("systemctl executable is not available or not allowlisted for service %s", c.spec.Service), observed)
+			return c.errorResult(
+				evidence.StatusError,
+				evidence.ReasonNone,
+				fmt.Sprintf("unsupported observer-local environment for service %s while reading runtime process identity: %s", c.spec.Service, describeSystemctlEnvironmentError(err)),
+				observed.withLookupSource(),
+			)
 		case errors.Is(err, errMainPIDParse):
-			return c.errorResult(evidence.StatusInsufficientData, evidence.ReasonParseError, fmt.Sprintf("service %s did not expose a usable MainPID", c.spec.Service), observed)
+			return c.errorResult(evidence.StatusInsufficientData, evidence.ReasonParseError, fmt.Sprintf("service %s did not expose a usable MainPID for observer-local runtime process identity", c.spec.Service), observed)
 		case errors.Is(err, errProcessParse):
-			return c.errorResult(evidence.StatusInsufficientData, evidence.ReasonParseError, fmt.Sprintf("unable to parse /proc status for service %s", c.spec.Service), observed)
+			return c.errorResult(evidence.StatusInsufficientData, evidence.ReasonParseError, fmt.Sprintf("unable to parse observer-local /proc status for service %s", c.spec.Service), observed)
 		case errors.Is(err, errProcessProvenance):
-			return c.errorResult(evidence.StatusInsufficientData, evidence.ReasonNone, fmt.Sprintf("unable to prove that MainPID still belongs to service %s", c.spec.Service), observed)
+			return c.errorResult(evidence.StatusInsufficientData, evidence.ReasonNone, fmt.Sprintf("unable to keep the observed process tied to the current observer-local service observation for service %s", c.spec.Service), observed)
 		case errors.Is(err, os.ErrNotExist):
-			return c.errorResult(evidence.StatusInsufficientData, evidence.ReasonNone, fmt.Sprintf("process for service %s disappeared before runtime identity could be read", c.spec.Service), observed)
+			return c.errorResult(evidence.StatusInsufficientData, evidence.ReasonNone, fmt.Sprintf("observed process for service %s disappeared before observer-local runtime process identity could be read", c.spec.Service), observed)
 		default:
-			return c.errorResult(evidence.StatusError, evidence.ReasonParseError, fmt.Sprintf("failed to inspect runtime identity for service %s", c.spec.Service), observed)
+			return c.errorResult(evidence.StatusError, evidence.ReasonParseError, fmt.Sprintf("failed to inspect observer-local runtime process identity for service %s", c.spec.Service), observed)
 		}
 	}
 
@@ -232,10 +237,10 @@ func (c identityCheck) runUID(observed runtimeIdentityObservation) evidence.Chec
 	expected := *c.spec.UID
 	actual := observed.status.UID
 	status := evidence.StatusPass
-	message := fmt.Sprintf("runtime uid matches %d", expected)
+	message := fmt.Sprintf("observer-local runtime uid matches %d", expected)
 	if actual != expected {
 		status = evidence.StatusFail
-		message = fmt.Sprintf("expected runtime uid %d, observed %d", expected, actual)
+		message = fmt.Sprintf("expected observer-local runtime uid %d, observed %d", expected, actual)
 	}
 
 	return c.result(status, evidence.ReasonNone, expected, actual, message, observed)
@@ -245,10 +250,10 @@ func (c identityCheck) runGID(observed runtimeIdentityObservation) evidence.Chec
 	expected := *c.spec.GID
 	actual := observed.status.GID
 	status := evidence.StatusPass
-	message := fmt.Sprintf("runtime gid matches %d", expected)
+	message := fmt.Sprintf("observer-local runtime gid matches %d", expected)
 	if actual != expected {
 		status = evidence.StatusFail
-		message = fmt.Sprintf("expected runtime gid %d, observed %d", expected, actual)
+		message = fmt.Sprintf("expected observer-local runtime gid %d, observed %d", expected, actual)
 	}
 
 	return c.result(status, evidence.ReasonNone, expected, actual, message, observed)
@@ -257,10 +262,10 @@ func (c identityCheck) runGID(observed runtimeIdentityObservation) evidence.Chec
 func (c identityCheck) runCapabilities(observed runtimeIdentityObservation, setName string, expected, actual []string) evidence.CheckResult {
 	expected = capabilities.SortCanonical(expected)
 	status := evidence.StatusPass
-	message := fmt.Sprintf("runtime %s capabilities match", setName)
+	message := fmt.Sprintf("observer-local runtime %s capabilities match", setName)
 	if !equalStrings(expected, actual) {
 		status = evidence.StatusFail
-		message = fmt.Sprintf("expected %s capabilities %v, observed %v", setName, expected, actual)
+		message = fmt.Sprintf("expected observer-local runtime %s capabilities %v, observed %v", setName, expected, actual)
 	}
 
 	return c.result(status, evidence.ReasonNone, expected, actual, message, observed)
@@ -383,6 +388,13 @@ func (o runtimeIdentityObservation) exitCodePtr() *int {
 		return nil
 	}
 	return intPtr(o.exitCode)
+}
+
+func (o runtimeIdentityObservation) withLookupSource() runtimeIdentityObservation {
+	if o.raw == "" {
+		o.raw = "systemctl lookup did not complete"
+	}
+	return o
 }
 
 type serviceMainPIDReader struct {

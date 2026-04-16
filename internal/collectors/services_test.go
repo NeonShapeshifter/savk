@@ -281,7 +281,6 @@ func TestBuildServiceChecksTreatsLiteralNumericUserNameAsName(t *testing.T) {
 	writeTestAccountFiles(t, accountRoot,
 		[]string{
 			"1001:x:2000:3000::/nonexistent:/usr/sbin/nologin",
-			"shadow:x:1001:1002::/nonexistent:/usr/sbin/nologin",
 		},
 		[]string{"grp3000:x:3000:"},
 	)
@@ -330,7 +329,6 @@ func TestBuildServiceChecksTreatsLiteralNumericGroupNameAsName(t *testing.T) {
 		[]string{"root:x:0:0::/root:/bin/sh"},
 		[]string{
 			"1002:x:4000:",
-			"shadowgrp:x:1002:",
 		},
 	)
 
@@ -373,6 +371,222 @@ func TestBuildServiceChecksTreatsLiteralNumericGroupNameAsName(t *testing.T) {
 	group := byID["service.literal-numeric-group.service.run_as.group"]
 	if group.Status != evidence.StatusPass {
 		t.Fatalf("group result status = %s, want %s", group.Status, evidence.StatusPass)
+	}
+}
+
+func TestBuildServiceChecksAmbiguousNumericUserDoesNotPassAsLiteralName(t *testing.T) {
+	t.Parallel()
+
+	accountRoot := t.TempDir()
+	writeTestAccountFiles(t, accountRoot,
+		[]string{
+			"1001:x:2000:3000::/nonexistent:/usr/sbin/nologin",
+			"shadow:x:1001:1002::/nonexistent:/usr/sbin/nologin",
+		},
+		[]string{"grp3000:x:3000:"},
+	)
+
+	runner := &fakeCommandRunner{
+		results: map[string]CommandResult{
+			"ambiguous-numeric-user-literal.service": {
+				Stdout: strings.Join([]string{
+					"LoadState=loaded",
+					"ActiveState=active",
+					"Restart=no",
+					"User=1001",
+					"Group=",
+					"AmbientCapabilities=",
+				}, "\n"),
+			},
+		},
+	}
+
+	checks := buildServiceChecksWithResolver(map[string]contract.ServiceSpec{
+		"ambiguous-numeric-user-literal.service": {
+			State: contract.ServiceStateActive,
+			RunAs: &contract.RunAsSpec{
+				User: "1001",
+			},
+		},
+	}, runner, NewAccountResolver(accountRoot), false)
+
+	results, err := engine.New().Run(context.Background(), checks)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(results))
+	}
+	if results[1].Status != evidence.StatusInsufficientData {
+		t.Fatalf("user result status = %s, want %s", results[1].Status, evidence.StatusInsufficientData)
+	}
+	if results[1].ReasonCode != evidence.ReasonParseError {
+		t.Fatalf("user result reason = %s, want %s", results[1].ReasonCode, evidence.ReasonParseError)
+	}
+}
+
+func TestBuildServiceChecksAmbiguousNumericUserDoesNotFailAgainstUIDMappedName(t *testing.T) {
+	t.Parallel()
+
+	accountRoot := t.TempDir()
+	writeTestAccountFiles(t, accountRoot,
+		[]string{
+			"1001:x:2000:3000::/nonexistent:/usr/sbin/nologin",
+			"shadow:x:1001:1002::/nonexistent:/usr/sbin/nologin",
+		},
+		[]string{"grp3000:x:3000:"},
+	)
+
+	runner := &fakeCommandRunner{
+		results: map[string]CommandResult{
+			"ambiguous-numeric-user-uid.service": {
+				Stdout: strings.Join([]string{
+					"LoadState=loaded",
+					"ActiveState=active",
+					"Restart=no",
+					"User=1001",
+					"Group=",
+					"AmbientCapabilities=",
+				}, "\n"),
+			},
+		},
+	}
+
+	checks := buildServiceChecksWithResolver(map[string]contract.ServiceSpec{
+		"ambiguous-numeric-user-uid.service": {
+			State: contract.ServiceStateActive,
+			RunAs: &contract.RunAsSpec{
+				User: "shadow",
+			},
+		},
+	}, runner, NewAccountResolver(accountRoot), false)
+
+	results, err := engine.New().Run(context.Background(), checks)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(results))
+	}
+	if results[1].Status != evidence.StatusInsufficientData {
+		t.Fatalf("user result status = %s, want %s", results[1].Status, evidence.StatusInsufficientData)
+	}
+	if results[1].ReasonCode != evidence.ReasonParseError {
+		t.Fatalf("user result reason = %s, want %s", results[1].ReasonCode, evidence.ReasonParseError)
+	}
+}
+
+func TestBuildServiceChecksAmbiguousNumericGroupDoesNotPassAsLiteralName(t *testing.T) {
+	t.Parallel()
+
+	accountRoot := t.TempDir()
+	writeTestAccountFiles(t, accountRoot,
+		[]string{"root:x:0:0::/root:/bin/sh"},
+		[]string{
+			"1002:x:4000:",
+			"shadowgrp:x:1002:",
+		},
+	)
+
+	runner := &fakeCommandRunner{
+		results: map[string]CommandResult{
+			"ambiguous-numeric-group-literal.service": {
+				Stdout: strings.Join([]string{
+					"LoadState=loaded",
+					"ActiveState=active",
+					"Restart=no",
+					"User=root",
+					"Group=1002",
+					"AmbientCapabilities=",
+				}, "\n"),
+			},
+		},
+	}
+
+	checks := buildServiceChecksWithResolver(map[string]contract.ServiceSpec{
+		"ambiguous-numeric-group-literal.service": {
+			State: contract.ServiceStateActive,
+			RunAs: &contract.RunAsSpec{
+				User:  "root",
+				Group: "1002",
+			},
+		},
+	}, runner, NewAccountResolver(accountRoot), false)
+
+	results, err := engine.New().Run(context.Background(), checks)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("len(results) = %d, want 3", len(results))
+	}
+	byID := make(map[string]evidence.CheckResult, len(results))
+	for _, result := range results {
+		byID[result.CheckID] = result
+	}
+	group := byID["service.ambiguous-numeric-group-literal.service.run_as.group"]
+	if group.Status != evidence.StatusInsufficientData {
+		t.Fatalf("group result status = %s, want %s", group.Status, evidence.StatusInsufficientData)
+	}
+	if group.ReasonCode != evidence.ReasonParseError {
+		t.Fatalf("group result reason = %s, want %s", group.ReasonCode, evidence.ReasonParseError)
+	}
+}
+
+func TestBuildServiceChecksAmbiguousNumericGroupDoesNotFailAgainstGIDMappedName(t *testing.T) {
+	t.Parallel()
+
+	accountRoot := t.TempDir()
+	writeTestAccountFiles(t, accountRoot,
+		[]string{"root:x:0:0::/root:/bin/sh"},
+		[]string{
+			"1002:x:4000:",
+			"shadowgrp:x:1002:",
+		},
+	)
+
+	runner := &fakeCommandRunner{
+		results: map[string]CommandResult{
+			"ambiguous-numeric-group-gid.service": {
+				Stdout: strings.Join([]string{
+					"LoadState=loaded",
+					"ActiveState=active",
+					"Restart=no",
+					"User=root",
+					"Group=1002",
+					"AmbientCapabilities=",
+				}, "\n"),
+			},
+		},
+	}
+
+	checks := buildServiceChecksWithResolver(map[string]contract.ServiceSpec{
+		"ambiguous-numeric-group-gid.service": {
+			State: contract.ServiceStateActive,
+			RunAs: &contract.RunAsSpec{
+				User:  "root",
+				Group: "shadowgrp",
+			},
+		},
+	}, runner, NewAccountResolver(accountRoot), false)
+
+	results, err := engine.New().Run(context.Background(), checks)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("len(results) = %d, want 3", len(results))
+	}
+	byID := make(map[string]evidence.CheckResult, len(results))
+	for _, result := range results {
+		byID[result.CheckID] = result
+	}
+	group := byID["service.ambiguous-numeric-group-gid.service.run_as.group"]
+	if group.Status != evidence.StatusInsufficientData {
+		t.Fatalf("group result status = %s, want %s", group.Status, evidence.StatusInsufficientData)
+	}
+	if group.ReasonCode != evidence.ReasonParseError {
+		t.Fatalf("group result reason = %s, want %s", group.ReasonCode, evidence.ReasonParseError)
 	}
 }
 
@@ -634,6 +848,47 @@ func TestResolveSystemctlPathForOSRunnerRejectsUnexpectedPath(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "/tmp/fake/systemctl") {
 		t.Fatalf("resolveSystemctlPathForRunner() error = %q, want path detail", err.Error())
+	}
+}
+
+func TestBuildServiceChecksClassifiesUnexpectedSystemctlPathAsUnsupportedEnvironment(t *testing.T) {
+	previous := lookPathExecutable
+	lookPathExecutable = func(string) (string, error) {
+		return "/tmp/fake/systemctl", nil
+	}
+	t.Cleanup(func() {
+		lookPathExecutable = previous
+	})
+
+	checks := BuildServiceChecks(map[string]contract.ServiceSpec{
+		"sensor-agent.service": {
+			State: contract.ServiceStateActive,
+		},
+	}, OSCommandRunner{})
+
+	results, err := engine.New().Run(context.Background(), checks)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+
+	got := results[0]
+	if got.Status != evidence.StatusError {
+		t.Fatalf("result.Status = %s, want %s", got.Status, evidence.StatusError)
+	}
+	if got.ReasonCode != evidence.ReasonNone {
+		t.Fatalf("result.ReasonCode = %s, want empty reason", got.ReasonCode)
+	}
+	if strings.Contains(got.Message, "parse") {
+		t.Fatalf("result.Message = %q, want unsupported-environment wording", got.Message)
+	}
+	if !strings.Contains(got.Message, "unsupported observer-local environment") {
+		t.Fatalf("result.Message = %q, want unsupported-environment wording", got.Message)
+	}
+	if !strings.Contains(got.Message, "/tmp/fake/systemctl") {
+		t.Fatalf("result.Message = %q, want path detail", got.Message)
 	}
 }
 

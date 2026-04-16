@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -113,6 +114,234 @@ func TestRunValidateAndCheckRejectSameInactiveIdentityContract(t *testing.T) {
 			}
 			if !strings.Contains(stderr.String(), want) {
 				t.Fatalf("stderr = %q, want substring %q", stderr.String(), want)
+			}
+		})
+	}
+}
+
+func TestRunValidateAndCheckRejectMalformedQuotedContracts(t *testing.T) {
+	cases := []struct {
+		name         string
+		metadataName string
+	}{
+		{name: "malformed double-quoted scalar", metadataName: `"bad"name"`},
+		{name: "malformed single-quoted scalar", metadataName: `'bad'name'`},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			contractBody := strings.Join([]string{
+				"apiVersion: savk/v1",
+				"kind: ApplianceContract",
+				"metadata:",
+				"  name: " + tc.metadataName,
+				"  target: linux-systemd",
+				"paths:",
+				"  /etc/hosts:",
+				"    type: file",
+			}, "\n") + "\n"
+
+			contractPath := filepath.Join(dir, "contract.yaml")
+			if err := os.WriteFile(contractPath, []byte(contractBody), 0o644); err != nil {
+				t.Fatalf("os.WriteFile(contract) error = %v", err)
+			}
+
+			for _, cmd := range []struct {
+				name string
+				args []string
+			}{
+				{name: "validate", args: []string{"validate", "--contract", contractPath}},
+				{name: "check", args: []string{"check", "--contract", contractPath, "--format", "json"}},
+			} {
+				t.Run(cmd.name, func(t *testing.T) {
+					var stdout bytes.Buffer
+					var stderr bytes.Buffer
+
+					code := run(cmd.args, &stdout, &stderr)
+					if code != 3 {
+						t.Fatalf("run(%s) code = %d, want 3", cmd.name, code)
+					}
+					if stdout.Len() != 0 {
+						t.Fatalf("stdout = %q, want empty", stdout.String())
+					}
+					if !strings.Contains(stderr.String(), "unterminated quoted string") {
+						t.Fatalf("stderr = %q, want malformed-quote message", stderr.String())
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestRunValidateAndCheckRejectUnsupportedQuotedEscapes(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		lines []string
+	}{
+		{
+			name: "unsupported double quoted value escape",
+			lines: []string{
+				"apiVersion: savk/v1",
+				"kind: ApplianceContract",
+				"metadata:",
+				`  name: "bad\qname"`,
+				"  target: linux-systemd",
+				"paths:",
+				"  /etc/hosts:",
+				"    type: file",
+			},
+		},
+		{
+			name: "unsupported double quoted key escape",
+			lines: []string{
+				"apiVersion: savk/v1",
+				"kind: ApplianceContract",
+				"metadata:",
+				"  name: bad-key",
+				"  target: linux-systemd",
+				"paths:",
+				`  "/tmp/bad\qpath":`,
+				"    type: file",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			contractPath := filepath.Join(dir, "contract.yaml")
+			contractBody := strings.Join(append(tc.lines, ""), "\n")
+			if err := os.WriteFile(contractPath, []byte(contractBody), 0o644); err != nil {
+				t.Fatalf("os.WriteFile(contract) error = %v", err)
+			}
+
+			for _, cmd := range []struct {
+				name string
+				args []string
+			}{
+				{name: "validate", args: []string{"validate", "--contract", contractPath}},
+				{name: "check", args: []string{"check", "--contract", contractPath, "--format", "json"}},
+			} {
+				t.Run(cmd.name, func(t *testing.T) {
+					var stdout bytes.Buffer
+					var stderr bytes.Buffer
+
+					code := run(cmd.args, &stdout, &stderr)
+					if code != 3 {
+						t.Fatalf("run(%s) code = %d, want 3", cmd.name, code)
+					}
+					if stdout.Len() != 0 {
+						t.Fatalf("stdout = %q, want empty", stdout.String())
+					}
+					if !strings.Contains(stderr.String(), `unsupported escape sequence \q`) {
+						t.Fatalf("stderr = %q, want unsupported-escape message", stderr.String())
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestRunValidateAndCheckUseDecodedQuotedPathTarget(t *testing.T) {
+	t.Parallel()
+
+	type reportResult struct {
+		CheckID string `json:"checkID"`
+		Status  string `json:"status"`
+	}
+	type report struct {
+		Results []reportResult `json:"results"`
+	}
+
+	cases := []struct {
+		name         string
+		metadataName string
+		pathKey      string
+		expectedPath string
+	}{
+		{
+			name:         "single quoted doubled quote",
+			metadataName: `'sensor''agent'`,
+			pathKey:      `'/tmp/quote''file'`,
+			expectedPath: "/tmp/quote'file",
+		},
+		{
+			name:         "double quoted escaped quote",
+			metadataName: `"sensor\"agent"`,
+			pathKey:      `"/tmp/quote\"file"`,
+			expectedPath: `/tmp/quote"file`,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			hostRoot := filepath.Join(dir, "host")
+			target := filepath.Join(hostRoot, strings.TrimPrefix(tc.expectedPath, string(os.PathSeparator)))
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				t.Fatalf("os.MkdirAll(target dir) error = %v", err)
+			}
+			if err := os.WriteFile(target, []byte("ok\n"), 0o640); err != nil {
+				t.Fatalf("os.WriteFile(target) error = %v", err)
+			}
+
+			contractPath := filepath.Join(dir, "contract.yaml")
+			contractBody := strings.Join([]string{
+				"apiVersion: savk/v1",
+				"kind: ApplianceContract",
+				"metadata:",
+				"  name: " + tc.metadataName,
+				"  target: linux-systemd",
+				"paths:",
+				"  " + tc.pathKey + ":",
+				"    type: file",
+			}, "\n") + "\n"
+			if err := os.WriteFile(contractPath, []byte(contractBody), 0o644); err != nil {
+				t.Fatalf("os.WriteFile(contract) error = %v", err)
+			}
+
+			var validateStdout bytes.Buffer
+			var validateStderr bytes.Buffer
+			validateCode := run([]string{"validate", "--contract", contractPath}, &validateStdout, &validateStderr)
+			if validateCode != 0 {
+				t.Fatalf("run(validate) code = %d, want 0; stderr = %q", validateCode, validateStderr.String())
+			}
+
+			var checkStdout bytes.Buffer
+			var checkStderr bytes.Buffer
+			checkCode := run([]string{"check", "--contract", contractPath, "--format", "json", "--domain", "paths", "--host-root", hostRoot}, &checkStdout, &checkStderr)
+			if checkCode != 0 {
+				t.Fatalf("run(check) code = %d, want 0; stderr = %q\nstdout=%s", checkCode, checkStderr.String(), checkStdout.String())
+			}
+
+			var got report
+			if err := json.Unmarshal(checkStdout.Bytes(), &got); err != nil {
+				t.Fatalf("json.Unmarshal(stdout) error = %v\nstdout=%s", err, checkStdout.String())
+			}
+
+			wantCheckID := "path." + tc.expectedPath + ".exists"
+			found := false
+			for _, result := range got.Results {
+				if result.CheckID != wantCheckID {
+					continue
+				}
+				found = true
+				if result.Status != "PASS" {
+					t.Fatalf("result %q status = %q, want PASS", result.CheckID, result.Status)
+				}
+			}
+			if !found {
+				t.Fatalf("results missing decoded checkID %q\nstdout=%s", wantCheckID, checkStdout.String())
 			}
 		})
 	}
@@ -669,8 +898,9 @@ func TestRunCheckJSONPathsNamespaceIsolation(t *testing.T) {
 
 func TestRunCheckJSONPathsHostRootBypassesNamespaceHeuristic(t *testing.T) {
 	dir := t.TempDir()
-	hostRoot := filepath.Join(dir, "host")
-	target := filepath.Join(hostRoot, "etc", "savk", "config.yaml")
+	normalizedHostRoot := filepath.Join(dir, "host")
+	hostRoot := filepath.Join(normalizedHostRoot, "..", "host")
+	target := filepath.Join(normalizedHostRoot, "etc", "savk", "config.yaml")
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		t.Fatalf("os.MkdirAll(target dir) error = %v", err)
 	}
@@ -716,10 +946,10 @@ func TestRunCheckJSONPathsHostRootBypassesNamespaceHeuristic(t *testing.T) {
 	if !strings.Contains(stdout.String(), `"status": "PASS"`) {
 		t.Fatalf("stdout missing PASS result under host-root: %s", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), `"hostRoot": "`+hostRoot+`"`) {
+	if !strings.Contains(stdout.String(), `"hostRoot": "`+normalizedHostRoot+`"`) {
 		t.Fatalf("stdout missing hostRoot report context: %s", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), hostRoot+`/etc/savk/config.yaml`) {
+	if !strings.Contains(stdout.String(), normalizedHostRoot+`/etc/savk/config.yaml`) {
 		t.Fatalf("stdout missing resolved host-root path in evidence: %s", stdout.String())
 	}
 }

@@ -37,7 +37,7 @@ make build
 Official release artifacts:
 
 ```bash
-make dist VERSION=0.1.4 COMMIT=abc1234
+make dist VERSION=0.1.5 COMMIT=abc1234
 ```
 
 ## Commands
@@ -58,8 +58,12 @@ Use the most validated slice first:
 
 ```bash
 ./bin/savk validate --contract examples/paths-only.yaml
-./bin/savk check --contract examples/paths-only.yaml --format json
 ```
+
+The published quickstart stops at `validate` intentionally. Running `check`
+against repo examples is environment-dependent: the referenced files must exist
+in the observed root and, without `--host-root`, observer-local namespace
+preflight must also succeed.
 
 ## Examples
 
@@ -87,8 +91,12 @@ paths:
 
 - `paths`: primary slice today. End-to-end, real filesystem checks, honest about existence, type, mode, owner, and group.
 - `sockets`: filesystem-backed, implemented with `lstat` and real Unix socket tests when the environment allows it.
-- `services`: implemented for observer-local `linux-systemd`, covered by unit tests and a minimal real integration path on a real host. The real test is still narrow today and does not demonstrate every service-backed branch on every host.
-- `identity`: observer-local runtime process identity via `service -> (MainPID + ControlGroup) -> /proc/<pid>/{status,cgroup}`. It has unit tests and a minimal real integration path, but it does not broadly prove mixed-namespace environments or every real service combination.
+- `services`: implemented for observer-local `linux-systemd`, covered by unit tests and a narrow real smoke path on a real host. That smoke path is still narrow today and does not demonstrate every service-backed branch on every host.
+- `identity`: observer-local runtime process identity under the current
+  `service -> (MainPID + ControlGroup) -> /proc/<pid>/{status,cgroup}`
+  observation. It has unit tests and a narrow real smoke path, but it does not
+  broadly prove mixed-namespace environments, durable process provenance, or
+  every real service combination.
 
 Current surface by domain:
 
@@ -109,6 +117,17 @@ Current surface by domain:
 - `--host-root` remaps only `paths` and `sockets` to an explicit host root
 - `host` in the report identifies the observer; when `--host-root` is used, the
   report also includes `hostRoot` to make the observed root explicit
+- service-backed checks currently require observer-local `systemctl` to resolve
+  to an allowlisted absolute path (`/usr/bin/systemctl` or `/bin/systemctl`);
+  otherwise they fail closed with `ERROR` and an explicit unsupported-environment
+  message
+- `services.run_as.user` and `services.run_as.group` check normalized
+  observer-local `systemctl show User=/Group=` unit properties; runtime process
+  identity belongs to the `identity` domain
+- `identity` PASS means the current observer-local process observation matched
+  the contract at collection time under the current `MainPID` +
+  `ControlGroup` linkage; it is not a stronger cross-time or cross-namespace
+  provenance claim
 - in `v0.1`, `services.capabilities` compares `AmbientCapabilities`
 - `evidence.raw` is redacted and truncated by default in the report
 - `--include-raw` exposes the full collector raw output under explicit opt-in
@@ -117,10 +136,10 @@ Current surface by domain:
 - name-based `owner` and `group` checks in `paths` and `sockets` resolve
   against `/etc/passwd` and `/etc/group` from the observed system; if there is
   no trustworthy mapping, they degrade to `INSUFFICIENT_DATA`
-- `services.run_as.user` and `services.run_as.group` resolve only numeric IDs
-  and primary groups through observer-local `/etc/passwd` and `/etc/group`; if
-  that evidence is insufficient or ambiguous, they degrade to
-  `INSUFFICIENT_DATA`
+- `services.run_as.user` and `services.run_as.group` normalize numeric-looking
+  `systemctl show User=/Group=` values through observer-local `/etc/passwd` and
+  `/etc/group`; if the literal-name and UID/GID interpretations disagree, or if
+  the evidence is otherwise insufficient, they degrade to `INSUFFICIENT_DATA`
 - SAVK does not try in `v0.1.x` to prove that `systemctl`, `/proc/<pid>`, and
   the local account databases belong to a target different from the observer
 - `json` is the stable public contract; `table` is human output
@@ -143,11 +162,15 @@ Current surface by domain:
 - for `services` and `identity`, the current semantics are observer-local; SAVK
   does not support mixed-namespace `v0.1.x` flows with a service-backed target
   separate from the observer
+- for `identity`, current linkage to the service is bounded to the
+  observer-local `MainPID` + `ControlGroup` observation at collection time; it
+  is not a durable provenance model
 - for `services` and `identity`, some failure classifications still depend on
   `systemctl` rather than a native systemd API
 - the real integration path included in the repo requires explicit opt-in and a
-  real `linux-systemd` host; outside that, confidence still comes mostly from
-  unit tests
+  real `linux-systemd` host; it is a narrow observer-local smoke path, not an
+  independent oracle for every service-backed branch, so confidence still comes
+  mostly from unit tests
 - there is no remediation, remote execution, snapshots, or SARIF
 - the recommended packaging is a binary or tarball; `npm` and `pnpm` are not
   part of the release

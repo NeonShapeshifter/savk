@@ -369,14 +369,109 @@ func parseQuotedString(raw string, line int) (string, bool, error) {
 	if raw == "" {
 		return "", false, nil
 	}
-	if len(raw) >= 2 && ((raw[0] == '"' && raw[len(raw)-1] == '"') || (raw[0] == '\'' && raw[len(raw)-1] == '\'')) {
-		return raw[1 : len(raw)-1], true, nil
+
+	if raw[0] == '"' || raw[0] == '\'' {
+		if len(raw) < 2 || raw[len(raw)-1] != raw[0] {
+			return "", false, fmt.Errorf("unterminated quoted string at line %d", line)
+		}
+		if !validQuotedString(raw) {
+			return "", false, fmt.Errorf("unterminated quoted string at line %d", line)
+		}
+
+		value, err := decodeQuotedString(raw, line)
+		if err != nil {
+			return "", false, err
+		}
+
+		return value, true, nil
 	}
 	if raw == `"` || raw == `'` || raw[0] == '"' || raw[0] == '\'' || raw[len(raw)-1] == '"' || raw[len(raw)-1] == '\'' {
 		return "", false, fmt.Errorf("unterminated quoted string at line %d", line)
 	}
 
 	return raw, false, nil
+}
+
+func decodeQuotedString(raw string, line int) (string, error) {
+	inner := raw[1 : len(raw)-1]
+
+	switch raw[0] {
+	case '\'':
+		return strings.ReplaceAll(inner, "''", "'"), nil
+	case '"':
+		return decodeDoubleQuotedString(inner, line)
+	default:
+		return "", fmt.Errorf("unterminated quoted string at line %d", line)
+	}
+}
+
+func decodeDoubleQuotedString(raw string, line int) (string, error) {
+	var builder strings.Builder
+	builder.Grow(len(raw))
+
+	for i := 0; i < len(raw); i++ {
+		ch := raw[i]
+		if ch != '\\' {
+			builder.WriteByte(ch)
+			continue
+		}
+		if i+1 >= len(raw) {
+			return "", fmt.Errorf("unterminated quoted string at line %d", line)
+		}
+
+		i++
+		switch raw[i] {
+		case '"', '\\':
+			builder.WriteByte(raw[i])
+		case 'n':
+			builder.WriteByte('\n')
+		case 'r':
+			builder.WriteByte('\r')
+		case 't':
+			builder.WriteByte('\t')
+		default:
+			return "", fmt.Errorf("unsupported escape sequence \\%c at line %d", raw[i], line)
+		}
+	}
+
+	return builder.String(), nil
+}
+
+func validQuotedString(raw string) bool {
+	switch raw[0] {
+	case '"':
+		for i := 1; i < len(raw)-1; i++ {
+			if raw[i] != '"' {
+				continue
+			}
+			if !escapedByBackslash(raw, i) {
+				return false
+			}
+		}
+		return true
+	case '\'':
+		for i := 1; i < len(raw)-1; i++ {
+			if raw[i] != '\'' {
+				continue
+			}
+			if i+1 >= len(raw)-1 || raw[i+1] != '\'' {
+				return false
+			}
+			i++
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func escapedByBackslash(raw string, index int) bool {
+	backslashes := 0
+	for i := index - 1; i >= 0 && raw[i] == '\\'; i-- {
+		backslashes++
+	}
+
+	return backslashes%2 == 1
 }
 
 func decodeContract(root *node) (*Contract, error) {
